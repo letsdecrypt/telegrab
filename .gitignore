@@ -18,4 +18,37 @@ target
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+.idea/
+
+# By Default, Ignore any .*, except .gitignore
+.*
+!.gitignore
+!.gitattributes
+!.rustfmt.toml
+!.github
+!.pre-commit-config.yaml
+
+
+# -- Rust
+# For .cargo/config.toml
+# For .cargo/config.toml
+!.cargo/
+target/
+
+
+# -- Safety net
+dist/
+__pycache__/
+node_modules/
+npm-debug.log
+report.*.json
+
+*.parquet
+*.map
+*.zip
+*.gz
+*.tar
+*.tgz
+
+.env.*
+!.env.example

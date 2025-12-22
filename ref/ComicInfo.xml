@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <Title>Spider-Man: The Lost Years</Title>
+    <Series>Amazing Spider-Man</Series>
+    <Number>129</Number>
+    <Count>0</Count>
+    <Volume>2023</Volume>
+    <AlternateSeries>Web of Spider-Man</AlternateSeries>
+    <AlternateNumber>50</AlternateNumber>
+    <AlternateCount>0</AlternateCount>
+    <Summary>In this landmark issue, Spider-Man faces his most dangerous foe yet: the Punisher! As crime rises in New York, a vigilante takes justice into his own hands, but Spider-Man must stop him before he goes too far.</Summary>
+    <Notes>First full appearance of The Punisher. Cover by Gil Kane.</Notes>
+    <Year>1974</Year>
+    <Month>2</Month>
+    <Day>0</Day>
+    <Writer>Stan Lee, Gerry Conway</Writer>
+    <Penciller>John Romita Sr., Gil Kane</Penciller>
+    <Inker>Frank Giacoia</Inker>
+    <Colorist>John Romita Sr.</Colorist>
+    <Letterer>Artie Simek</Letterer>
+    <CoverArtist>Gil Kane</CoverArtist>
+    <Editor>Roy Thomas</Editor>
+    <Publisher>Marvel Comics</Publisher>
+    <Imprint>Marvel Universe</Imprint>
+    <Genre>Superhero</Genre>
+    <Tags>spider-man, punisher, marvel, vigilante, action</Tags>
+    <Web>https://marvel.com/comics/issue/12345</Web>
+    <PageCount>36</PageCount>
+    <Language>en</Language>
+    <Format>Comic</Format>
+    <BlackAndWhite>false</BlackAndWhite>
+    <Manga>false</Manga>
+    <Characters>Peter Parker (Spider-Man), Frank Castle (Punisher), J. Jonah Jameson</Characters>
+    <Teams>The Avengers (mentioned)</Teams>
+    <Locations>New York City, Empire State Building</Locations>
+    <ScanInformation>Scanned and cleaned by ComicScanGroup v2.1</ScanInformation>
+    <StoryArc>Spider-Man: The Punisher Saga</StoryArc>
+    <SeriesGroup>Spider-Man Classic</SeriesGroup>
+    <AgeRating>Everyone 10+</AgeRating>
+    <CommunityRating>4.8</CommunityRating>
+    <CriticalRating>9.2</CriticalRating>
+</ComicInfo>
