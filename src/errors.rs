@@ -1,6 +1,6 @@
 use std::string;
 
-use crate::{backtrace, Result};
+use crate::{Result, backtrace};
 use axum::{extract::FromRequest, http::StatusCode, response::IntoResponse};
 use colored::Colorize;
 use hyper::header::InvalidHeaderValue;

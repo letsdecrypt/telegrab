@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use sqlx::{postgres::PgPoolOptions, prelude::FromRow, Executor, PgPool, Postgres, Transaction};
+use sqlx::{Executor, PgPool, Postgres, Transaction, postgres::PgPoolOptions, prelude::FromRow};
 use uuid::Uuid;
 
-use crate::{configuration::Settings,Result};
+use crate::{Result, configuration::Settings};
 
-pub async fn run_worker_until_stopped(configuration: Settings) -> Result<()>{
+pub async fn run_worker_until_stopped(configuration: Settings) -> Result<()> {
     let connection_pool = PgPoolOptions::new()
         .acquire_timeout(Duration::from_secs(2))
         .connect_lazy_with(configuration.database.with_db());

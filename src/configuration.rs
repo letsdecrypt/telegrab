@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret,SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};

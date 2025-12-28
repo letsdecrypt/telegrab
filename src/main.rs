@@ -1,16 +1,16 @@
 use std::fmt::{self, Display};
 
-use tokio::task::JoinError;
 use telegrab::{
+    Result,
     configuration::get_configuration,
     grab_worker::run_worker_until_stopped,
-    startup::{run_until_stopped, AppState},
+    startup::{AppState, run_until_stopped},
     telemetry::init,
-    Result,
 };
+use tokio::task::JoinError;
 
 #[tokio::main]
-async fn main()  -> Result<()> {
+async fn main() -> Result<()> {
     let configuration = get_configuration().expect("Failed to read configuration.");
     init(&configuration.logger);
     let app_state = AppState::build(&configuration).await;

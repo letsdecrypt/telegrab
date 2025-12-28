@@ -1,0 +1,160 @@
+use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
+use crate::model::dto::pagination::PaginationQuery;
+use crate::model::dto::pagination::PaginationResponse;
+use crate::model::entity::doc::Doc;
+use sqlx::PgPool;
+
+pub async fn create_doc(pool: &PgPool, req: CreateDocReq) -> Result<Doc, sqlx::Error> {
+    let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *";
+    sqlx::query_as::<_, Doc>(sql)
+        .bind(req.url)
+        .fetch_one(pool)
+        .await
+}
+pub async fn get_doc_by_id(pool: &PgPool, id: i32) -> Result<Doc, sqlx::Error> {
+    let sql = "SELECT * FROM doc WHERE id = $1";
+    sqlx::query_as::<_, Doc>(sql).bind(id).fetch_one(pool).await
+}
+
+pub async fn get_docs(
+    pool: &PgPool,
+    query: &PaginationQuery,
+) -> Result<PaginationResponse<Doc>, sqlx::Error> {
+    // 构建排序子句
+    let sort_clause = if let Some(sort_rules) = &query.sort {
+        let mut clauses = Vec::new();
+        for sort in sort_rules {
+            let order = match sort.order {
+                crate::model::dto::pagination::RefineSortOrder::Asc => "ASC",
+                crate::model::dto::pagination::RefineSortOrder::Desc => "DESC",
+            };
+            clauses.push(format!("{}.{} {}", "doc", sort.field, order));
+        }
+        if !clauses.is_empty() {
+            format!(" ORDER BY {}", clauses.join(", "))
+        } else {
+            // 默认按id降序排序
+            " ORDER BY doc.id DESC".to_string()
+        }
+    } else {
+        // 默认按id降序排序
+        " ORDER BY doc.id DESC".to_string()
+    };
+
+    // 构建分页子句
+    let pagination_clause = format!(" LIMIT {} OFFSET {}", query.limit(), query.offset());
+
+    // 执行查询获取总数
+    let total: (i64,) = sqlx::query_as(&"SELECT COUNT(*) FROM doc")
+        .fetch_one(pool)
+        .await?;
+
+    // 执行查询获取数据
+    let docs = sqlx::query_as::<_, Doc>(&format!(
+        "SELECT * FROM doc{}{}",
+        sort_clause, pagination_clause
+    ))
+    .fetch_all(pool)
+    .await?;
+
+    // 构建并返回分页响应
+    Ok(PaginationResponse {
+        data: docs,
+        total: total.0 as u64,
+    })
+}
+
+pub async fn delete_doc_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
+    let sql = "DELETE FROM doc WHERE id = $1";
+    sqlx::query(sql)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map(|r| r.rows_affected())
+}
+
+pub async fn update_doc(pool: &PgPool, id: i32, req: UpdateDocReq) -> Result<Doc, sqlx::Error> {
+    let sql = r#"UPDATE doc
+    SET page_title = $1,
+        page_date = $2,
+        title = $3,
+        series = $4,
+        number = $5,
+        count = $6,
+        volume = $7,
+        summary = $8,
+        notes = $9,
+        year = $10,
+        month = $11,
+        day = $12,
+        writer = $13,
+        penciller = $14,
+        inker = $15,
+        colorist = $16,
+        letterer = $17,
+        cover_artist = $18,
+        editor = $19,
+        publisher = $20,
+        imprint = $21,
+        genre = $22,
+        tags = $23,
+        web = $24,
+        page_count = $25,
+        language = $26,
+        format = $27,
+        black_and_white = $28,
+        characters = $29,
+        teams = $30,
+        locations = $31,
+        scan_information = $32,
+        story_arc = $33,
+        series_group = $34,
+        age_rating = $35,
+        community_rating = $36,
+        critical_rating = $37,
+        updated_at = now()
+    WHERE id = $38
+    RETURNING *"#;
+
+    sqlx::query_as::<_, Doc>(sql)
+        .bind(req.page_title)
+        .bind(req.page_date)
+        .bind(req.title)
+        .bind(req.series)
+        .bind(req.number)
+        .bind(req.count)
+        .bind(req.volume)
+        .bind(req.summary)
+        .bind(req.notes)
+        .bind(req.year)
+        .bind(req.month)
+        .bind(req.day)
+        .bind(req.writer)
+        .bind(req.penciller)
+        .bind(req.inker)
+        .bind(req.colorist)
+        .bind(req.letterer)
+        .bind(req.cover_artist)
+        .bind(req.editor)
+        .bind(req.publisher)
+        .bind(req.imprint)
+        .bind(req.genre)
+        .bind(req.tags)
+        .bind(req.web)
+        .bind(req.page_count)
+        .bind(req.language)
+        .bind(req.format)
+        .bind(req.black_and_white)
+        .bind(req.characters)
+        .bind(req.teams)
+        .bind(req.locations)
+        .bind(req.scan_information)
+        .bind(req.story_arc)
+        .bind(req.series_group)
+        .bind(req.age_rating)
+        .bind(req.community_rating)
+        .bind(req.critical_rating)
+        .bind(id)
+        .fetch_one(pool)
+        .await
+}

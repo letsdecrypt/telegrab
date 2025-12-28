@@ -1,6 +1,6 @@
-use axum::Router;
 use crate::startup::AppState;
+use axum::Router;
 
-pub fn pic_routers() -> Router<AppState> {
+pub fn routers() -> Router<AppState> {
     Router::new()
 }

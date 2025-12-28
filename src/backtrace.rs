@@ -1,4 +1,4 @@
-use crate::{errors::Error, Result};
+use crate::{Result, errors::Error};
 use std::sync::OnceLock;
 
 use regex::Regex;

@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_variant::to_variant_name;
 use tokio::task::JoinHandle;
 use tracing_subscriber::{
+    EnvFilter, Layer, Registry,
     fmt::{self, MakeWriter},
     layer::SubscriberExt,
     util::SubscriberInitExt,
-    EnvFilter, Layer, Registry,
 };
 
 use crate::configuration::LoggerSettings;

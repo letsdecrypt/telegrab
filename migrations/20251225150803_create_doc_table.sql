@@ -2,6 +2,9 @@
 create table doc
 (
     id               serial primary key,
+    url              text      not null unique,
+    page_title       text,
+    page_date        timestamptz,
     title            text,
     series           text,
     number           text,
@@ -37,7 +40,6 @@ create table doc
     age_rating       text,
     community_rating text,
     critical_rating  text,
-    url              text      not null unique,
-    created_at       timestamp not null default now(),
-    updated_at       timestamp not null default now()
+    created_at       timestamptz not null default now(),
+    updated_at       timestamptz not null default now()
 );

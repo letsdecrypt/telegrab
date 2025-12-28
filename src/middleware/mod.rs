@@ -1,3 +1,3 @@
 mod request_id;
 
-pub use request_id::{request_id_middleware, TeleGrabRequestId};
+pub use request_id::{TeleGrabRequestId, request_id_middleware};

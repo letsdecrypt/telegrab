@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::{
-    http, routing::{get, post},
-    Router,
+    Router, http,
+    routing::{get, post},
 };
 use axum_messages::MessagesManagerLayer;
 use axum_session::{SessionConfig, SessionLayer, SessionStore};
@@ -10,7 +10,7 @@ use axum_session_redispool::SessionRedisPool;
 use listenfd::ListenFd;
 use redis_pool::RedisPool;
 use secrecy::ExposeSecret;
-use sqlx::{postgres::PgPoolOptions, Connection};
+use sqlx::{Connection, postgres::PgPoolOptions};
 use sqlx::{Executor, PgConnection, PgPool, Pool, Postgres};
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
@@ -18,10 +18,10 @@ use tower_sessions::{MemoryStore, SessionManagerLayer};
 
 use crate::shutdown_signal::shutdown_signal;
 use crate::{
-    configuration::{DatabaseSettings, Settings},
-    controller::{cbz_routers, doc_routers, health, notification, pic_routers},
-    middleware::{request_id_middleware, TeleGrabRequestId},
     Result,
+    configuration::{DatabaseSettings, Settings},
+    controller::{cbz, doc, health_check, notifications, pic},
+    middleware::{TeleGrabRequestId, request_id_middleware},
 };
 
 #[derive(Clone)]
@@ -46,11 +46,11 @@ impl AppState {
 
 pub fn app(state: AppState) -> Router {
     Router::new()
-        .route("/health", get(health))
-        .route("/notification", get(notification))
-        .nest("/doc", doc_routers())
-        .nest("/pic", pic_routers())
-        .nest("/cbz", cbz_routers())
+        .route("/api/health", get(health_check::health))
+        .nest("/api/notifications", notifications::routers())
+        .nest("/api/doc", doc::routers())
+        .nest("/api/pic", pic::routers())
+        .nest("/api/cbz", cbz::routers())
         .with_state(state)
 }
 
