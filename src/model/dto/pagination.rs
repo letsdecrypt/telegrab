@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -37,6 +38,18 @@ pub enum RefineOperator {
         // 可扩展：Gte/Lte/In/NotIn 等
 }
 
+impl Display for RefineOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RefineOperator::Eq => write!(f, "="),
+            RefineOperator::Ne => write!(f, "!="),
+            RefineOperator::Gt => write!(f, ">"),
+            RefineOperator::Lt => write!(f, "<"),
+            RefineOperator::Contains => write!(f, "LIKE"),
+        }
+    }
+}
+
 // 分页请求参数（解析 URL Query 后结构化）
 #[derive(Debug, Deserialize)]
 pub struct PaginationQuery {
@@ -46,10 +59,10 @@ pub struct PaginationQuery {
     #[serde(default = "default_end")]
     #[serde(rename = "_end")]
     pub end: u64,
-    #[serde(default, deserialize_with = "deserialize_json_str")]
-    pub sort: Option<Vec<RefineSort>>, // 排序规则（JSON 字符串解析）
-    #[serde(default, deserialize_with = "deserialize_json_str")]
-    pub filters: Option<Vec<RefineFilter>>, // 过滤规则（JSON 字符串解析）
+    #[serde(rename = "_sort")]
+    pub sort: Option<String>,
+    #[serde(rename = "_order")]
+    pub order: Option<RefineSortOrder>,
 }
 
 // 分页响应结构体（对齐 Refine 规范）
@@ -68,21 +81,6 @@ fn default_start() -> u64 {
 // 默认每页条数：10
 fn default_end() -> u64 {
     10
-}
-
-// 解析 Refine 传递的 JSON 字符串参数（如 sort/filters）
-fn deserialize_json_str<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    T: DeserializeOwned,
-    D: serde::Deserializer<'de>,
-{
-    let s: Option<String> = Option::deserialize(deserializer)?;
-    match s {
-        Some(s) => serde_json::from_str(&s)
-            .map(Some)
-            .map_err(serde::de::Error::custom),
-        None => Ok(None),
-    }
 }
 
 // 从 PaginationQuery 计算 offset（用于 SQL LIMIT/OFFSET）

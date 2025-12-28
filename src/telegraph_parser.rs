@@ -4,6 +4,7 @@ use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::Serialize;
 use std::collections::HashSet;
+use crate::telegraph_client::TelegraphClient;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +14,8 @@ pub struct TelegraphPost {
     pub image_urls: Vec<String>,
 }
 
-pub async fn parse_telegraph_post(client: &Client, url: &str) -> Result<TelegraphPost> {
+pub async fn parse_telegraph_post(telegraph_client: &TelegraphClient, url: &str) -> Result<TelegraphPost> {
+    let  client = telegraph_client.client();
     // 获取网页内容
     let html_content = client.get(url).send().await?.text().await?;
 

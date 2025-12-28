@@ -1,9 +1,10 @@
+use std::time::Duration;
+use crate::telegraph_client::TelegraphClient;
+use crate::telemetry;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
-
-use crate::telemetry;
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory");
@@ -61,8 +62,22 @@ impl TryFrom<String> for Environment {
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
+    pub telegraph_client: TelegraphClientSettings,
     pub logger: LoggerSettings,
     pub redis_uri: SecretString,
+    pub data_dir: String,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct TelegraphClientSettings {
+    pub proxy: Option<String>,
+    pub timeout_milliseconds: u64,
+}
+
+impl TelegraphClientSettings {
+    pub fn client(&self) -> TelegraphClient {
+        TelegraphClient::new(Duration::from_millis(self.timeout_milliseconds))
+    }
 }
 
 #[derive(Deserialize, Clone)]

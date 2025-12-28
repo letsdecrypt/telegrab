@@ -1,8 +1,9 @@
 use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
-use crate::model::dto::pagination::PaginationQuery;
 use crate::model::dto::pagination::PaginationResponse;
-use crate::model::entity::doc::Doc;
+use crate::model::dto::pagination::{PaginationQuery, RefineSortOrder};
+use crate::model::entity::doc::{Doc, ShimDoc};
 use crate::telegraph_parser::TelegraphPost;
+use convert_case::{Case, Casing};
 use sqlx::PgPool;
 use time::OffsetDateTime;
 
@@ -23,14 +24,15 @@ pub async fn get_docs(
     query: &PaginationQuery,
 ) -> Result<PaginationResponse<Doc>, sqlx::Error> {
     // 构建排序子句
-    let sort_clause = if let Some(sort_rules) = &query.sort {
+    let sort_clause = if let Some(sort) = &query.sort {
         let mut clauses = Vec::new();
-        for sort in sort_rules {
-            let order = match sort.order {
-                crate::model::dto::pagination::RefineSortOrder::Asc => "ASC",
-                crate::model::dto::pagination::RefineSortOrder::Desc => "DESC",
+        let snake_sort = sort.to_case(Case::Snake);
+        if let Some(order) = &query.order {
+            let order = match &order {
+                RefineSortOrder::Asc => "ASC",
+                RefineSortOrder::Desc => "DESC",
             };
-            clauses.push(format!("{}.{} {}", "doc", sort.field, order));
+            clauses.push(format!("{}.{} {}", "doc", snake_sort, order));
         }
         if !clauses.is_empty() {
             format!(" ORDER BY {}", clauses.join(", "))
@@ -64,6 +66,11 @@ pub async fn get_docs(
         data: docs,
         total: total.0 as u64,
     })
+}
+
+pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<ShimDoc>, sqlx::Error> {
+    let sql = "SELECT id, url, page_title, title FROM doc WHERE status = 1 ORDER BY doc.id";
+    sqlx::query_as::<_, ShimDoc>(sql).fetch_all(pool).await
 }
 
 pub async fn delete_doc_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {

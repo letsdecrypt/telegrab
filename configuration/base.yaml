@@ -7,6 +7,9 @@ database:
   password: "password"
   database_name: "telegrab"
 redis_uri: "redis://localhost:6379"
+telegraph_client:
+  timeout_milliseconds: 10000
+data_dir: "data"
 logger:
   # Enable pretty backtrace (sets RUST_BACKTRACE=1)
   pretty_backtrace: true

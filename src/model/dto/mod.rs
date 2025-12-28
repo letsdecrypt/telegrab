@@ -2,6 +2,7 @@ use serde::Serialize;
 
 pub mod doc;
 pub mod pagination;
+pub mod pic;
 
 #[derive(Debug, Copy, Clone, Serialize)]
 pub struct AffectedRows {

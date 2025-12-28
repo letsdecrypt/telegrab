@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::{
-    Router, http,
-    routing::{get, post},
+    http, routing::{get, post},
+    Router,
 };
 use axum_messages::MessagesManagerLayer;
 use axum_session::{SessionConfig, SessionLayer, SessionStore};
@@ -10,23 +10,24 @@ use axum_session_redispool::SessionRedisPool;
 use listenfd::ListenFd;
 use redis_pool::RedisPool;
 use secrecy::ExposeSecret;
-use sqlx::{Connection, postgres::PgPoolOptions};
+use sqlx::{postgres::PgPoolOptions, Connection};
 use sqlx::{Executor, PgConnection, PgPool, Pool, Postgres};
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tower_sessions::{MemoryStore, SessionManagerLayer};
-
 use crate::shutdown_signal::shutdown_signal;
+use crate::telegraph_client::TelegraphClient;
 use crate::{
-    Result,
     configuration::{DatabaseSettings, Settings},
     controller::{cbz, doc, health_check, notifications, pic},
-    middleware::{TeleGrabRequestId, request_id_middleware},
+    middleware::{request_id_middleware, TeleGrabRequestId},
+    Result,
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: Arc<Pool<Postgres>>,
+    pub telegraph_client: Arc<TelegraphClient>,
     pub base_url: String,
 }
 
@@ -37,8 +38,10 @@ impl AppState {
                 .acquire_timeout(std::time::Duration::from_secs(2))
                 .connect_lazy_with(configuration.database.with_db()),
         );
+        let telegraph_client = Arc::new(configuration.telegraph_client.client());
         Self {
             db_pool,
+            telegraph_client,
             base_url: configuration.application.base_url.clone(),
         }
     }

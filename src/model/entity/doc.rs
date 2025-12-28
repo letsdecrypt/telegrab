@@ -53,6 +53,15 @@ pub struct Doc {
     pub updated_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ShimDoc {
+    pub id: i32,
+    pub url: String,
+    pub page_title: Option<String>,
+    pub title: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ComicInfoXml {

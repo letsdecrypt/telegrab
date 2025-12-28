@@ -1,21 +1,22 @@
-use crate::Result;
 use crate::errors;
 use crate::format;
 use crate::model::dto;
-use crate::model::dto::AffectedRows;
 use crate::model::dto::doc::UpdateDocReq;
 use crate::model::dto::pagination::PaginationQuery;
+use crate::model::dto::AffectedRows;
 use crate::service;
 use crate::startup::AppState;
+use crate::telegraph_parser::parse_telegraph_post;
+use crate::Result;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
-use crate::telegraph_parser::parse_telegraph_post;
 
 pub fn routers() -> Router<AppState> {
     Router::new()
+        .route("/parsed", get(get_parsed_docs_handler))
         .route("/", get(get_docs_handler))
         .route("/", post(create_doc_handler))
         .route("/{id}", get(get_doc_handler))
@@ -35,6 +36,11 @@ async fn create_doc_handler(
     let new_doc = params.try_into()?;
     let doc = service::doc::create_doc(&state.db_pool, new_doc).await?;
     format::json(doc)
+}
+
+async fn get_parsed_docs_handler(State(state): State<AppState>) -> Result<Response> {
+    let docs = service::doc::get_parsed_docs(&state.db_pool).await?;
+    format::json(docs)
 }
 async fn get_docs_handler(
     State(state): State<AppState>,
@@ -74,8 +80,7 @@ async fn enqueue_doc_handler(
     Path(id): Path<i32>,
 ) -> Result<Response> {
     let doc = service::doc::get_doc_by_id(&state.db_pool, id).await?;
-    let client = reqwest::Client::new();
-    let telegraph_post = parse_telegraph_post(&client, &doc.url).await?;
+    let telegraph_post = parse_telegraph_post(&state.telegraph_client, &doc.url).await?;
     let doc = service::doc::update_parsed_doc(&state.db_pool, id, telegraph_post).await?;
     format::json(doc)
 }
