@@ -9,7 +9,7 @@ pub struct Pic {
     pub doc_id: i32,
     pub url: String,
     pub seq: i32,
-    pub status: Option<i32>,
+    pub status: i16,
     #[serde(with = "iso8601")]
     pub created_at: OffsetDateTime,
     #[serde(with = "iso8601")]

@@ -2,7 +2,8 @@
 create table doc
 (
     id               serial primary key,
-    url              text      not null unique,
+    status           smallint default 0, -- 0: new, 1: parsed, 2: loading 3: cbz linked
+    url              text        not null unique,
     page_title       text,
     page_date        timestamptz,
     title            text,

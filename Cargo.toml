@@ -37,6 +37,7 @@ redis = "1.0.1"
 redis_pool = "0.10.0"
 regex = "1.12.2"
 reqwest = { version = "0.12.27", features = ["json", "rustls-tls"] }
+scraper = "0.25.0"
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-aux = "4.7.0"

@@ -11,6 +11,7 @@ pub mod model;
 pub mod service;
 pub mod shutdown_signal;
 pub mod startup;
+pub mod telegraph_parser;
 pub mod telemetry;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

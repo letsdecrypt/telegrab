@@ -2,7 +2,9 @@ use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
 use crate::model::dto::pagination::PaginationQuery;
 use crate::model::dto::pagination::PaginationResponse;
 use crate::model::entity::doc::Doc;
+use crate::telegraph_parser::TelegraphPost;
 use sqlx::PgPool;
+use time::OffsetDateTime;
 
 pub async fn create_doc(pool: &PgPool, req: CreateDocReq) -> Result<Doc, sqlx::Error> {
     let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *";
@@ -157,4 +159,39 @@ pub async fn update_doc(pool: &PgPool, id: i32, req: UpdateDocReq) -> Result<Doc
         .bind(id)
         .fetch_one(pool)
         .await
+}
+
+pub async fn update_parsed_doc(
+    pool: &PgPool,
+    id: i32,
+    p: TelegraphPost,
+) -> Result<Doc, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let parsed_date = p.date.as_deref().and_then(|date_str| {
+        OffsetDateTime::parse(
+            date_str,
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .ok()
+    });
+    let doc_sql =
+        r#"UPDATE doc SET page_title = $1, page_date = $2, status = 1 WHERE id = $3 RETURNING *"#;
+    let doc = sqlx::query_as::<_, Doc>(doc_sql)
+        .bind(p.title)
+        .bind(parsed_date)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    let pic_sql = r#"INSERT INTO pic (doc_id, url, seq) VALUES ($1, $2, $3)"#;
+    for (i, url) in p.image_urls.iter().enumerate() {
+        sqlx::query(pic_sql)
+            .bind(id)
+            .bind(url)
+            .bind(i as i32)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(doc)
 }

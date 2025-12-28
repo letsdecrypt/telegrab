@@ -7,6 +7,7 @@ use time::serde::iso8601;
 #[serde(rename_all = "camelCase")]
 pub struct Doc {
     pub id: i32,
+    pub status: i16,
     pub url: String,
     pub page_title: Option<String>,
     #[serde(with = "iso8601::option")]
