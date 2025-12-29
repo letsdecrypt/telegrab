@@ -1,67 +1,39 @@
-use std::sync::Arc;
-
-use axum::{
-    http, routing::{get, post},
-    Router,
+use crate::shutdown_signal::shutdown_signal;
+use crate::state::AppState;
+use crate::{
+    Result,
+    configuration::Settings,
+    controller::{cbz, doc, health_check, pic, task},
+    middleware::{TeleGrabRequestId, request_id_middleware},
 };
+use axum::{Router, http, routing::get};
 use axum_messages::MessagesManagerLayer;
 use axum_session::{SessionConfig, SessionLayer, SessionStore};
 use axum_session_redispool::SessionRedisPool;
 use listenfd::ListenFd;
 use redis_pool::RedisPool;
 use secrecy::ExposeSecret;
-use sqlx::{postgres::PgPoolOptions, Connection};
-use sqlx::{Executor, PgConnection, PgPool, Pool, Postgres};
 use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tower_sessions::{MemoryStore, SessionManagerLayer};
-use crate::shutdown_signal::shutdown_signal;
-use crate::telegraph_client::TelegraphClient;
-use crate::{
-    configuration::{DatabaseSettings, Settings},
-    controller::{cbz, doc, health_check, notifications, pic},
-    middleware::{request_id_middleware, TeleGrabRequestId},
-    Result,
-};
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db_pool: Arc<Pool<Postgres>>,
-    pub telegraph_client: Arc<TelegraphClient>,
-    pub base_url: String,
-}
-
-impl AppState {
-    pub async fn build(configuration: &Settings) -> Self {
-        let db_pool = Arc::new(
-            PgPoolOptions::new()
-                .acquire_timeout(std::time::Duration::from_secs(2))
-                .connect_lazy_with(configuration.database.with_db()),
-        );
-        let telegraph_client = Arc::new(configuration.telegraph_client.client());
-        Self {
-            db_pool,
-            telegraph_client,
-            base_url: configuration.application.base_url.clone(),
-        }
-    }
-}
 
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health_check::health))
-        .nest("/api/notifications", notifications::routers())
         .nest("/api/doc", doc::routers())
         .nest("/api/pic", pic::routers())
         .nest("/api/cbz", cbz::routers())
+        .nest("/api/task", task::routers())
         .with_state(state)
 }
 
-pub async fn run_until_stopped(state: AppState, configuration: Settings) -> Result<()> {
-    let app = register_layer(app(state), &configuration).await;
+pub async fn run_app_until_stopped(state: AppState, configuration: Settings) -> Result<()> {
+    let app = register_layer(app(state.clone()), &configuration).await;
 
     let listener = init_listener(&configuration).await;
-    axum::serve(listener, app).await?;
+    let server = axum::serve(listener, app);
+    let graceful = server.with_graceful_shutdown(shutdown_signal(state.clone()));
+    graceful.await?;
     Ok(())
 }
 

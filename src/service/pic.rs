@@ -35,7 +35,7 @@ pub async fn get_pics(
                 RefineSortOrder::Asc => "ASC",
                 RefineSortOrder::Desc => "DESC",
             };
-            clauses.push(format!("{}.{} {}", "pic", sort, order));
+            clauses.push(format!("{}.{} {}", "pic", snake_sort, order));
         }
         if !clauses.is_empty() {
             format!(" ORDER BY {}", clauses.join(", "))

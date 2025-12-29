@@ -1,12 +1,12 @@
+use crate::Result;
+use crate::model::dto::AffectedRows;
 use crate::model::dto::pagination::PaginationQuery;
 use crate::model::dto::pic::MutatePicReq;
-use crate::model::dto::AffectedRows;
-use crate::startup::AppState;
-use crate::Result;
+use crate::state::AppState;
 use crate::{format, service};
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post, put};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
@@ -15,7 +15,6 @@ pub fn routers() -> Router<AppState> {
         .route("/", get(get_pics_handler))
         .route("/", post(create_pic_handler))
         .route("/{id}", get(get_pic_handler))
-        .route("/{id}", put(enqueue_pic_handler))
         .route("/{id}", patch(update_pic_handler))
         .route("/{id}", delete(delete_pic_handler))
 }
@@ -50,13 +49,6 @@ async fn create_pic_handler(
 ) -> Result<Response> {
     let pic = service::pic::create_pic(&state.db_pool, params).await?;
     format::json(pic)
-}
-
-async fn enqueue_pic_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i32>,
-) -> Result<Response> {
-    todo!()
 }
 
 async fn update_pic_handler(

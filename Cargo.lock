@@ -3508,6 +3508,7 @@ dependencies = [
  "hyper",
  "linkify",
  "listenfd",
+ "log",
  "mime",
  "once_cell",
  "quickcheck",
@@ -3758,6 +3759,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

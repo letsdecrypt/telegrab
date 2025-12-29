@@ -143,3 +143,11 @@ impl From<Doc> for ComicInfoXml {
         }
     }
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelegraphPost {
+    pub title: String,
+    pub date: Option<String>,
+    pub image_urls: Vec<String>,
+}

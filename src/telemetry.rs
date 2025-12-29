@@ -52,7 +52,7 @@ impl std::fmt::Display for LogLevel {
 }
 
 // Function to initialize the logger based on the provided configuration
-const MODULE_WHITELIST: &[&str] = &["tower_http", "sqlx::query", "zero2prod"];
+const MODULE_WHITELIST: &[&str] = &["tower_http", "sqlx::query", "telegrab"];
 
 pub fn init(logger_settings: &LoggerSettings) {
     let mut layers: Vec<Box<dyn Layer<Registry> + Sync + Send>> = Vec::new();
@@ -72,7 +72,7 @@ fn init_env_filter(level: &LogLevel) -> EnvFilter {
                 MODULE_WHITELIST
                     .iter()
                     .map(|m| format!("{m}={level}"))
-                    .chain(std::iter::once(format!("{}={}", "zero2prod", level)))
+                    .chain(std::iter::once(format!("{}={}", "telegrab", level)))
                     .collect::<Vec<_>>()
                     .join(","),
             )

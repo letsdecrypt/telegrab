@@ -1,8 +1,7 @@
 use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
 use crate::model::dto::pagination::PaginationResponse;
 use crate::model::dto::pagination::{PaginationQuery, RefineSortOrder};
-use crate::model::entity::doc::{Doc, ShimDoc};
-use crate::telegraph_parser::TelegraphPost;
+use crate::model::entity::doc::{Doc, ShimDoc, TelegraphPost};
 use convert_case::{Case, Casing};
 use sqlx::PgPool;
 use time::OffsetDateTime;

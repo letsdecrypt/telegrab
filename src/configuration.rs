@@ -1,5 +1,3 @@
-use std::time::Duration;
-use crate::telegraph_client::TelegraphClient;
 use crate::telemetry;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -58,29 +56,51 @@ impl TryFrom<String> for Environment {
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
-    pub telegraph_client: TelegraphClientSettings,
+    pub http_client: HttpClientSettings,
+    pub worker: WorkerSettings,
     pub logger: LoggerSettings,
     pub redis_uri: SecretString,
     pub data_dir: String,
 }
 
-#[derive(Deserialize, Clone)]
-pub struct TelegraphClientSettings {
-    pub proxy: Option<String>,
-    pub timeout_milliseconds: u64,
+#[derive(Deserialize, Debug, Clone)]
+pub struct HttpClientSettings {
+    pub connect_timeout_secs: u64,
+    pub timeout_secs: u64,
+    pub max_connections: usize,
+    pub pool_enabled: bool,
+    pub user_agent: String,
 }
 
-impl TelegraphClientSettings {
-    pub fn client(&self) -> TelegraphClient {
-        TelegraphClient::new(Duration::from_millis(self.timeout_milliseconds))
+impl Default for HttpClientSettings {
+    fn default() -> Self {
+        Self {
+            connect_timeout_secs: 30,
+            timeout_secs: 60,
+            max_connections: 100,
+            pool_enabled: true,
+            user_agent: "telegraph/0.1.0".into(),
+        }
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Debug, Clone)]
+pub struct WorkerSettings {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub count: usize,
+}
+
+impl Default for WorkerSettings {
+    fn default() -> Self {
+        Self { count: 4 }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct ApplicationSettings {
     pub host: String,
     #[serde(deserialize_with = "deserialize_number_from_string")]
@@ -93,7 +113,7 @@ impl ApplicationSettings {
         format!("{}:{}", self.host, self.port)
     }
 }
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: SecretString,
@@ -124,7 +144,7 @@ impl DatabaseSettings {
     }
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct LoggerSettings {
     pub pretty_backtrace: bool,
     pub level: telemetry::LogLevel,

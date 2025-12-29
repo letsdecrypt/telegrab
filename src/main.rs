@@ -1,11 +1,9 @@
 use std::fmt::{self, Display};
 
+use telegrab::state::AppState;
 use telegrab::{
+    configuration::get_configuration, startup::run_app_until_stopped, telemetry::init, worker::start_background_workers,
     Result,
-    configuration::get_configuration,
-    grab_worker::run_worker_until_stopped,
-    startup::{AppState, run_until_stopped},
-    telemetry::init,
 };
 use tokio::task::JoinError;
 
@@ -14,11 +12,13 @@ async fn main() -> Result<()> {
     let configuration = get_configuration().expect("Failed to read configuration.");
     init(&configuration.logger);
     let app_state = AppState::build(&configuration).await;
-    let application_task = tokio::spawn(run_until_stopped(app_state, configuration.clone()));
-    let worker_task = tokio::spawn(run_worker_until_stopped(configuration.clone()));
+    let application_task = tokio::spawn(run_app_until_stopped(
+        app_state.clone(),
+        configuration.clone(),
+    ));
+    start_background_workers(app_state.clone(), configuration.clone()).await;
     tokio::select! {
-        o = application_task => report_exit("API", o),
-        o = worker_task =>  report_exit("Background worker", o),
+        o = application_task => report_exit("API server", o),
     };
     Ok(())
 }

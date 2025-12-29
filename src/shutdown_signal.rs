@@ -1,5 +1,7 @@
+use crate::state::AppState;
 use tokio::signal;
-pub async fn shutdown_signal() {
+
+pub async fn shutdown_signal(state: AppState) {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -25,4 +27,12 @@ pub async fn shutdown_signal() {
             tracing::info!("Gracefully exited with terminate");
         },
     }
+    state.shutdown.shutdown().await;
+    tracing::info!("Clear pending tasks");
+    let cleared = state.queue_state.clear().await;
+    if !cleared.is_empty() {
+        tracing::info!("Cleared {} pending tasks", cleared.len());
+    }
+    state.shutdown.wait_for_completion(30).await;
+    tracing::info!("Gracefully shutdown completed, exit program.");
 }
