@@ -178,6 +178,14 @@ impl AppState {
             configuration.http_client.clone(),
         )));
 
+        {
+            //db migration
+            sqlx::migrate!()
+                .run(&*db_pool)
+                .await
+                .expect("Could not run database migrations.");
+        }
+
         Self {
             queue_state,
             shutdown,
