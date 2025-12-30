@@ -101,14 +101,13 @@ impl HttpClientManager {
             .bytes()
             .await
             .map_err(|e| DownloadError::IOError(format!("Failed to read response bytes: {}", e)))?;
-        if let Some(parent_dir) = Path::new(save_path).parent() {
-            if !parent_dir.exists() {
+        if let Some(parent_dir) = Path::new(save_path).parent()
+            && !parent_dir.exists() {
                 tracing::info!("Creating directory: {}", parent_dir.display());
                 tokio::fs::create_dir_all(parent_dir).await.map_err(|e| {
                     DownloadError::IOError(format!("Failed to create save path: {}", e))
                 })?;
             }
-        }
         tokio::fs::write(save_path, &bytes)
             .await
             .map_err(|e| DownloadError::IOError(format!("Failed to write file: {}", e)))?;

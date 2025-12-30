@@ -9,6 +9,12 @@ pub struct GracefulShutdown {
     pub active_tasks: Arc<RwLock<usize>>,
 }
 
+impl Default for GracefulShutdown {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GracefulShutdown {
     pub fn new() -> Self {
         let (shutdown_tx, shutdown_rx) = broadcast::channel(1);

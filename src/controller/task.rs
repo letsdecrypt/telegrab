@@ -1,6 +1,6 @@
 use crate::model::entity::task::{
-    ActiveTaskResponse, EnqueueRequest, EnqueueResponse, QueueInfo, QueueStats, Task,
-    TaskStatus, TaskType,
+    ActiveTaskResponse, CleanupRequest, CleanupResponse, EnqueueRequest, EnqueueResponse,
+    QueueInfo, QueueStats, Task, TaskStatus, TaskType,
 };
 use crate::state::AppState;
 use axum::extract::State;
@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::stream::StreamExt;
-use futures_util::{Stream, stream};
+use futures_util::{stream, Stream};
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
@@ -20,6 +20,7 @@ pub fn routers() -> Router<AppState> {
         .route("/active", get(active_tasks))
         .route("/queued", get(queued_tasks))
         .route("/enqueue", post(enqueue_task))
+        .route("/cleanup", post(cleanup_completed_tasks))
         .route("/sse", get(sse_handler))
 }
 
@@ -35,15 +36,15 @@ async fn active_tasks(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn queued_tasks(State(state): State<AppState>) -> impl IntoResponse {
-    let tasks = state.queue_state.get_tasks().await;
-    let size = tasks.len();
+    let all_tasks = state.queue_state.get_tasks().await;
+    let queue_size = state.queue_state.size().await;
     let mut stats = QueueStats {
         pending: 0,
         completed: 0,
         processing: 0,
         failed: 0,
     };
-    for task in &tasks {
+    for task in &all_tasks {
         match task.status {
             TaskStatus::Pending => stats.pending += 1,
             TaskStatus::Processing => stats.processing += 1,
@@ -51,7 +52,11 @@ async fn queued_tasks(State(state): State<AppState>) -> impl IntoResponse {
             TaskStatus::Failed(_) => stats.failed += 1,
         }
     }
-    let response = QueueInfo { size, tasks, stats };
+    let response = QueueInfo {
+        queue_size,
+        all_tasks,
+        stats,
+    };
     Json(response)
 }
 async fn enqueue_task(
@@ -134,4 +139,35 @@ pub async fn sse_handler(
             .interval(Duration::from_secs(1))
             .text("keep-alive"),
     )
+}
+
+async fn cleanup_completed_tasks(
+    State(state): State<AppState>,
+    Json(payload): Json<CleanupRequest>,
+) -> impl IntoResponse {
+    let removed_count = state
+        .queue_state
+        .cleanup_completed_tasks(payload.keep_recent)
+        .await;
+    let tasks = state.queue_state.task_store.read().await;
+    let total_tasks = tasks.len();
+    let remaining_completed = tasks
+        .iter()
+        .filter(|(_, task)| matches!(task.status, TaskStatus::Completed))
+        .count();
+    let message = if removed_count > 0 {
+        format!(
+            "Cleaned up {} completed tasks, {} remaining",
+            removed_count, remaining_completed
+        )
+    } else {
+        "No completed tasks to clean up".to_string()
+    };
+    let response = CleanupResponse {
+        message,
+        removed_count,
+        remaining_completed,
+        total_tasks,
+    };
+    Json(response)
 }

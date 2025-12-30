@@ -1,7 +1,7 @@
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
 use crate::http_client::HttpClientManager;
-use crate::model::entity::task::{QueueEvent, TaskType};
+use crate::model::entity::task::{QueueEvent, TaskStatus, TaskType};
 use crate::state::{AppState, QueueState};
 use crate::{service, Result};
 use sqlx::PgPool;
@@ -87,14 +87,14 @@ impl TaskWorker {
                 tracing::info!("Worker {} processing task: {:?}", self.worker_id, task);
                 task.mark_processing();
 
-                /*if !self.queue_state.update_task(task.clone()).await {
+                if !self.queue_state.update_task(task.clone()).await {
                     tracing::warn!(
                         "Worker {} can not update task {}, it may be processed by other worker",
                         self.worker_id,
                         task.id
                     );
                     return Ok(Some(false));
-                }*/
+                }
                 self.queue_state
                     .register_active_task(&task, self.worker_id)
                     .await;
@@ -129,13 +129,13 @@ impl TaskWorker {
                         );
                     }
                 }
-                /*if !self.queue_state.update_task(task.clone()).await {
+                if !self.queue_state.update_task(task.clone()).await {
                     tracing::warn!(
                         "Worker {} can not update task {} to final state",
                         self.worker_id,
                         task.id
                     );
-                }*/
+                }
                 if let Err(err) = self
                     .queue_state
                     .sender
@@ -155,8 +155,8 @@ impl TaskWorker {
     }
     async fn process_html_parse_task(&self, id: &i32) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
-        if doc.status==1 && doc.page_title.is_some(){
-            return Ok(doc.page_title)
+        if doc.status == 1 && doc.page_title.is_some() {
+            return Ok(doc.page_title);
         }
         let telegraph_post = self.http_client.parse_telegraph_post(&doc.url).await?;
         let doc = service::doc::update_parsed_doc(&self.db_pool, *id, telegraph_post).await?;
@@ -219,4 +219,33 @@ pub async fn start_background_workers(state: AppState, configuration: Settings) 
             worker.start().await;
         });
     }
+}
+pub async fn start_auto_cleanup_task(state: AppState, configuration: Settings) {
+    let cleanup_interval = configuration.worker.auto_cleanup_interval_secs;
+    let max_completed_tasks = configuration.worker.max_completed_tasks;
+    tokio::spawn(async move {
+        let mut shutdown_rx = state.shutdown.get_shutdown_rx().await;
+        tracing::info!(
+            "Start Auto Cleanup Task, cleanup in every {}s, remain {} tasks at most",
+            cleanup_interval,
+            max_completed_tasks
+        );
+        loop {
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    tracing::info!("Auto Cleanup Task received shutdown signal, stop.");
+                    break;
+                }
+                _ = tokio::time::sleep(Duration::from_secs(cleanup_interval)) => {
+                    let removed_count = state.queue_state.cleanup_completed_tasks(max_completed_tasks).await;
+                    if removed_count>0{
+                        tracing::info!("{} tasks cleaned", removed_count);
+                        let tasks = state.queue_state.get_tasks().await;
+                        let remaining_completed = tasks.iter().filter(|t| matches!(t.status, TaskStatus::Completed)).count();
+                        tracing::info!("{} tasks remaining, {} tasks total.",  remaining_completed,tasks.len());
+                    }
+                }
+            }
+        }
+    });
 }

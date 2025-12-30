@@ -48,7 +48,7 @@ pub async fn get_docs(
     let pagination_clause = format!(" LIMIT {} OFFSET {}", query.limit(), query.offset());
 
     // 执行查询获取总数
-    let total: (i64,) = sqlx::query_as(&"SELECT COUNT(*) FROM doc")
+    let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM doc")
         .fetch_one(pool)
         .await?;
 

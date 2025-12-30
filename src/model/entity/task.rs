@@ -113,8 +113,8 @@ pub struct EnqueueResponse {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueInfo {
-    pub size: usize,
-    pub tasks: Vec<Task>,
+    pub queue_size: usize,
+    pub all_tasks: Vec<Task>,
     pub stats: QueueStats,
 }
 
@@ -154,4 +154,24 @@ pub enum QueueEvent {
     TaskRemoved(String),
     TaskUpdated(Task),
     QueueCleared,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupRequest {
+    #[serde(default = "default_keep_count")]
+    pub keep_recent: usize,
+}
+
+fn default_keep_count() -> usize {
+    100
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupResponse {
+    pub message: String,
+    pub removed_count: usize,
+    pub remaining_completed: usize,
+    pub total_tasks: usize,
 }

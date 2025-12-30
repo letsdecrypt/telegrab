@@ -11,6 +11,7 @@ use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
+use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 
 pub fn routers() -> Router<AppState> {
@@ -33,7 +34,8 @@ async fn create_doc_handler(
 ) -> Result<Response> {
     let new_doc = params.try_into()?;
     let doc = service::doc::create_doc(&state.db_pool, new_doc).await?;
-    format::json(doc)
+    let response = (StatusCode::CREATED, Json(doc)).into_response();
+    Ok(response)
 }
 
 async fn get_parsed_docs_handler(State(state): State<AppState>) -> Result<Response> {
@@ -45,13 +47,10 @@ async fn get_docs_handler(
     Query(query): Query<PaginationQuery>,
 ) -> Result<Response> {
     let docs = service::doc::get_docs(&state.db_pool, &query).await?;
+    let mut headers = HeaderMap::new();
+    headers.insert("x-total-count", docs.total.to_string().parse()?);
     let json = Json(docs.data);
-    let mut response = json.into_response();
-    response.headers_mut().insert(
-        "x-total-count",
-        axum::http::HeaderValue::from_str(&docs.total.to_string()).unwrap(),
-    );
-    Ok(response)
+    Ok((headers, json).into_response())
 }
 async fn get_doc_handler(State(state): State<AppState>, Path(id): Path<i32>) -> Result<Response> {
     let doc = service::doc::get_doc_by_id(&state.db_pool, id).await?;

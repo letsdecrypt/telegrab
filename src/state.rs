@@ -1,20 +1,27 @@
 use crate::configuration::Settings;
 use crate::graceful::GracefulShutdown;
 use crate::http_client::HttpClientManager;
-use crate::model::entity::task::{ActiveTaskInfo, QueueEvent, Task, TaskType};
+use crate::model::entity::task::{ActiveTaskInfo, QueueEvent, Task, TaskStatus, TaskType};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{Notify, RwLock, broadcast};
+use tokio::sync::{broadcast, Notify, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct QueueState {
     pub tasks: Arc<RwLock<VecDeque<Task>>>,
     pub active_tasks: Arc<RwLock<HashMap<String, ActiveTaskInfo>>>,
+    pub task_store: Arc<RwLock<HashMap<String, Task>>>,
     pub sender: broadcast::Sender<QueueEvent>,
     pub notify: Arc<Notify>,
+}
+
+impl Default for QueueState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QueueState {
@@ -23,6 +30,7 @@ impl QueueState {
         Self {
             tasks: Arc::new(RwLock::new(VecDeque::new())),
             active_tasks: Arc::new(RwLock::new(HashMap::new())),
+            task_store: Arc::new(RwLock::new(HashMap::new())),
             sender,
             notify: Arc::new(Notify::new()),
         }
@@ -88,30 +96,27 @@ impl QueueState {
         tasks.len()
     }
     pub async fn get_tasks(&self) -> Vec<Task> {
-        let tasks = self.tasks.read().await;
-        tasks.iter().cloned().collect()
+        let task_store = self.task_store.read().await;
+        task_store.values().cloned().collect()
     }
     pub async fn get_task(&self, task_id: &str) -> Option<Task> {
-        let tasks = self.tasks.read().await;
-        tasks.iter().find(|t| t.id == task_id).cloned()
+        let task_store = self.task_store.read().await;
+        task_store.get(task_id).cloned()
     }
     pub async fn update_task(&self, updated_task: Task) -> bool {
-        let mut tasks = self.tasks.write().await;
-        for task in tasks.iter_mut() {
-            if task.id == updated_task.id {
-                *task = updated_task.clone();
-                if let Err(e) = self.sender.send(QueueEvent::TaskUpdated(updated_task)) {
-                    tracing::warn!("send task updated event failed: {:?}", e);
-                }
-                return true;
-            }
+        let mut task_store = self.task_store.write().await;
+        task_store.insert(updated_task.id.clone(), updated_task.clone());
+        if let Err(e) = self.sender.send(QueueEvent::TaskUpdated(updated_task)) {
+            tracing::warn!("send task updated event failed: {:?}", e);
         }
-        false
+        true
     }
     pub async fn enqueue(&self, task: Task) {
-        let mut tasks = self.tasks.write().await;
         let task_clone = task.clone();
-        tasks.push_back(task);
+        let mut tasks = self.tasks.write().await;
+        tasks.push_back(task.clone());
+        let mut task_store = self.task_store.write().await;
+        task_store.insert(task.id.clone(), task);
         self.notify.notify_one();
         if let Err(e) = self.sender.send(QueueEvent::TaskAdded(task_clone)) {
             tracing::warn!("send task enqueued event failed: {:?}", e);
@@ -119,7 +124,6 @@ impl QueueState {
     }
     pub async fn dequeue(&self) -> Option<Task> {
         let mut tasks = self.tasks.write().await;
-        //fixme: dequeue task from front, how to update it later
         tasks.pop_front()
     }
     pub async fn wait_for_task(&self, timeout: Option<Duration>) -> bool {
@@ -145,12 +149,34 @@ impl QueueState {
     pub async fn clear(&self) -> Vec<Task> {
         let mut tasks = self.tasks.write().await;
         let cleared: Vec<Task> = tasks.drain(..).collect();
-        if !cleared.is_empty() {
-            if let Err(e) = self.sender.send(QueueEvent::QueueCleared) {
+        if !cleared.is_empty()
+            && let Err(e) = self.sender.send(QueueEvent::QueueCleared) {
                 tracing::warn!("send tasks cleared event failed: {:?}", e);
             }
-        }
         cleared
+    }
+    pub async fn cleanup_completed_tasks(&self, keep_recent: usize) -> usize {
+        let mut task_store = self.task_store.write().await;
+        let mut completed_tasks: Vec<String> = Vec::new();
+        for (id, task) in task_store.iter() {
+            if let TaskStatus::Completed = task.status {
+                completed_tasks.push(id.clone());
+            }
+        }
+        let mut removed_count = 0;
+        if completed_tasks.len() > keep_recent {
+            completed_tasks.sort_by(|a, b| {
+                let a = task_store.get(a).unwrap();
+                let b = task_store.get(b).unwrap();
+                b.created_at.cmp(&a.created_at)
+            });
+            let to_remove = completed_tasks.len() - keep_recent;
+            for id in completed_tasks.iter().take(to_remove) {
+                task_store.remove(id);
+                removed_count += 1;
+            }
+        }
+        removed_count
     }
 }
 

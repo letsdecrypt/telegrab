@@ -2,7 +2,10 @@ use std::fmt::{self, Display};
 
 use telegrab::state::AppState;
 use telegrab::{
-    configuration::get_configuration, startup::run_app_until_stopped, telemetry::init, worker::start_background_workers,
+    configuration::get_configuration,
+    startup::run_app_until_stopped,
+    telemetry::init,
+    worker::{start_auto_cleanup_task, start_background_workers},
     Result,
 };
 use tokio::task::JoinError;
@@ -16,7 +19,8 @@ async fn main() -> Result<()> {
         app_state.clone(),
         configuration.clone(),
     ));
-    start_background_workers(app_state.clone(), configuration.clone()).await;
+    tokio::spawn(start_background_workers(app_state.clone(), configuration.clone()));
+    tokio::spawn(start_auto_cleanup_task(app_state.clone(), configuration.clone()));
     tokio::select! {
         o = application_task => report_exit("API server", o),
     };

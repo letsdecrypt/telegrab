@@ -92,11 +92,19 @@ impl Default for HttpClientSettings {
 pub struct WorkerSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub count: usize,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub max_completed_tasks: usize,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub auto_cleanup_interval_secs: u64,
 }
 
 impl Default for WorkerSettings {
     fn default() -> Self {
-        Self { count: 4 }
+        Self {
+            count: 4,
+            max_completed_tasks: 100,
+            auto_cleanup_interval_secs: 60,
+        }
     }
 }
 

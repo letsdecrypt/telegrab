@@ -8,6 +8,7 @@ use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
+use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 
 pub fn routers() -> Router<AppState> {
@@ -30,13 +31,10 @@ async fn get_pics_handler(
     Query(pic_query): Query<PicQuery>,
 ) -> Result<Response> {
     let pics = service::pic::get_pics(&state.db_pool, &query, &pic_query).await?;
+    let mut headers = HeaderMap::new();
+    headers.insert("x-total-count", pics.total.to_string().parse()?);
     let json = Json(pics.data);
-    let mut response = json.into_response();
-    response.headers_mut().insert(
-        "x-total-count",
-        axum::http::HeaderValue::from_str(&pics.total.to_string()).unwrap(),
-    );
-    Ok(response)
+    Ok((headers, json).into_response())
 }
 async fn get_pic_handler(State(state): State<AppState>, Path(id): Path<i32>) -> Result<Response> {
     let pic = service::pic::get_pic_by_id(&state.db_pool, id).await?;
@@ -48,7 +46,8 @@ async fn create_pic_handler(
     Json(params): Json<MutatePicReq>,
 ) -> Result<Response> {
     let pic = service::pic::create_pic(&state.db_pool, params).await?;
-    format::json(pic)
+    let response = (StatusCode::CREATED, Json(pic)).into_response();
+    Ok(response)
 }
 
 async fn update_pic_handler(
