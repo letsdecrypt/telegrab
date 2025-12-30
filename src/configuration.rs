@@ -64,7 +64,8 @@ pub struct Settings {
     pub worker: WorkerSettings,
     pub logger: LoggerSettings,
     pub redis_uri: SecretString,
-    pub data_dir: String,
+    pub pic_dir: String,
+    pub cbz_dir: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]

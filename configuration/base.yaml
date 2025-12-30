@@ -17,7 +17,8 @@ worker:
   count: 4
   max_completed_tasks: 100
   auto_cleanup_interval_secs: 60
-data_dir: "data"
+pic_dir: "data/pic"
+cbz_dir: "data/cbz"
 logger:
   # Enable pretty backtrace (sets RUST_BACKTRACE=1)
   pretty_backtrace: true

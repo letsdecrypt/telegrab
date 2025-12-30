@@ -1,6 +1,7 @@
+use std::path::Path;
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
-use crate::http_client::HttpClientManager;
+use crate::http_client::{DownloadError, HttpClientManager};
 use crate::model::entity::task::{QueueEvent, TaskStatus, TaskType};
 use crate::state::{AppState, QueueState};
 use crate::{service, Result};
@@ -15,15 +16,19 @@ pub struct TaskWorker {
     http_client: Arc<HttpClientManager>,
     db_pool: Arc<PgPool>,
     worker_id: usize,
+    pic_dir: String,
+    cbz_dir: String,
 }
 
 impl TaskWorker {
-    pub fn new(app_state: &AppState, worker_id: usize) -> Self {
+    pub fn new(app_state: &AppState, configuration: Settings, worker_id: usize) -> Self {
         Self {
             queue_state: app_state.queue_state.clone(),
             shutdown: app_state.shutdown.clone(),
             http_client: app_state.http_client.clone(),
             db_pool: app_state.db_pool.clone(),
+            pic_dir: configuration.pic_dir.clone(),
+            cbz_dir: configuration.cbz_dir.clone(),
             worker_id,
         }
     }
@@ -162,11 +167,35 @@ impl TaskWorker {
         let doc = service::doc::update_parsed_doc(&self.db_pool, *id, telegraph_post).await?;
         Ok(doc.page_title)
     }
-    async fn process_pic_download_task(&self, pic_id: &i32) -> Result<Option<String>> {
-        todo!("Download pic {}", pic_id);
+    async fn process_pic_download_task(&self, id: &i32) -> Result<Option<String>> {
+        let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
+        let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
+        let last_path_segment = parsed_url.path_segments().unwrap().last().unwrap();;
+        let save_dir = format!("{}/{}", self.pic_dir, last_path_segment);
+        ensure_dir_exists(&save_dir).await?;
+        let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
+        let total = pics.len();
+        let mut succeeded = 0;
+        for (i, pic) in pics.iter().enumerate() {
+            let pic_url = pic.url.clone();
+            let ext = pic_url.split('.').last().unwrap_or("jpg");
+            let filename = format_page_filename(i, total, ext);
+            let filepath = format!("{}/{}", save_dir, filename);
+             if let Err(err) = self.http_client.download_file(&pic_url,filepath.as_str()).await {
+                tracing::warn!(
+                    "Worker {} download pic {} failed: {}",
+                    self.worker_id,
+                    pic_url,
+                    err
+                );
+             } else {
+                succeeded += 1;
+             }
+        }
+        Ok(Some(format!("{},{}/{}", save_dir, succeeded, total)))
     }
-    async fn process_cbz_archive_task(&self, doc_id: &i32) -> Result<Option<String>> {
-        todo!("Archive html doc {}", doc_id);
+    async fn process_cbz_archive_task(&self, id: &i32) -> Result<Option<String>> {
+        todo!("Archive html doc {}", id);
     }
     async fn wait_for_current_tasks(&self) {
         let active_tasks = self.queue_state.active_task_count().await;
@@ -201,20 +230,10 @@ impl TaskWorker {
 }
 
 pub async fn start_background_workers(state: AppState, configuration: Settings) {
-    let queue_state = state.queue_state.clone();
-    let shutdown = state.shutdown.clone();
-    let http_client = state.http_client.clone();
-    let db_pool = state.db_pool.clone();
     let worker_count = configuration.worker.count;
     tracing::info!("Start {} worker(s)", worker_count);
     for worker_id in 0..worker_count {
-        let worker = TaskWorker {
-            queue_state: queue_state.clone(),
-            shutdown: shutdown.clone(),
-            http_client: http_client.clone(),
-            db_pool: db_pool.clone(),
-            worker_id,
-        };
+        let worker = TaskWorker::new(&state, configuration.clone(), worker_id);
         tokio::spawn(async move {
             worker.start().await;
         });
@@ -248,4 +267,17 @@ pub async fn start_auto_cleanup_task(state: AppState, configuration: Settings) {
             }
         }
     });
+}
+
+async fn ensure_dir_exists(p: &str) -> Result<()> {
+    let pp = Path::new(p);
+    if !pp.exists() {
+        tokio::fs::create_dir_all(pp).await?;
+    }
+    Ok(())
+}
+
+fn format_page_filename(page_idx:usize,total_pages:usize,ext:&str) -> String{
+    let num_digits = ((total_pages as f64).log10().floor() as usize+1).max(3);
+    format!("{:0width$}.{}", page_idx, ext, width = num_digits)
 }

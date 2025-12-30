@@ -2,6 +2,7 @@ use crate::model::entity::task::{
     ActiveTaskResponse, CleanupRequest, CleanupResponse, EnqueueRequest, EnqueueResponse,
     QueueInfo, QueueStats, Task, TaskStatus, TaskType,
 };
+use crate::service;
 use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -74,17 +75,35 @@ async fn enqueue_task(
             }),
         );
     }
-    let task = match payload.task_type.as_str() {
-        "HtmlParse" => Task::new_html_parse_task(payload.id),
-        "PicDownload" => Task::new_pic_download_task(payload.id),
-        "CbzArchive" => Task::new_cbz_archive_task(payload.id),
+    let doc_id = payload.id;
+    let doc_result = service::doc::get_doc_by_id(&state.db_pool, doc_id).await;
+    let doc = match doc_result {
+        Ok(doc) => doc,
+        Err(e) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(EnqueueResponse {
+                    task_id: "".to_string(),
+                    task_type: "".to_string(),
+                    message: format!("Failed to get doc: {}", e),
+                    queue_size: 0,
+                }),
+            );
+        }
+    };
+    let doc_status = doc.status;
+
+    let task = match doc_status {
+        0 => Task::new_html_parse_task(payload.id),
+        1 => Task::new_pic_download_task(payload.id),
+        2 => Task::new_cbz_archive_task(payload.id),
         _ => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(EnqueueResponse {
                     task_id: "".to_string(),
-                    task_type: payload.task_type.clone(),
-                    message: "Invalid task type".to_string(),
+                    task_type: "".to_string(),
+                    message: "Invalid task status".to_string(),
                     queue_size: 0,
                 }),
             );

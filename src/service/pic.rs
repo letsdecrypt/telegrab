@@ -100,3 +100,14 @@ pub async fn delete_pic_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error
         .await
         .map(|r| r.rows_affected())
 }
+
+pub async fn get_pics_by_doc_id(
+    pool: &PgPool,
+    doc_id: i32,
+) -> Result<Vec<Pic>, sqlx::Error> {
+    let sql = "SELECT * FROM pic WHERE doc_id = $1 ORDER BY seq";
+    sqlx::query_as::<_, Pic>(sql)
+        .bind(doc_id)
+        .fetch_all(pool)
+        .await
+}

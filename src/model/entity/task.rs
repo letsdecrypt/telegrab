@@ -44,10 +44,10 @@ impl Task {
             error: None,
         }
     }
-    pub fn new_pic_download_task(pic_id: i32) -> Self {
+    pub fn new_pic_download_task(doc_id: i32) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
-            task_type: TaskType::PicDownload { id: pic_id },
+            task_type: TaskType::PicDownload { id: doc_id },
             status: TaskStatus::Pending,
             created_at: OffsetDateTime::now_utc(),
             started_at: None,
@@ -98,7 +98,6 @@ impl Task {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnqueueRequest {
-    pub task_type: String,
     pub id: i32,
 }
 
