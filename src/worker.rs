@@ -184,6 +184,14 @@ impl TaskWorker {
             let ext = pic_url.split('.').last().unwrap_or("jpg");
             let filename = format_page_filename(i, total, ext);
             let filepath = format!("{}/{}", save_dir, filename);
+            if Path::new(&filepath).exists() {
+                tracing::info!(
+                    "Worker {} pic {} already exists, skip download",
+                    self.worker_id,
+                    filepath
+                );
+                continue;
+            }
             if let Err(err) = self
                 .http_client
                 .download_file(&pic_url, filepath.as_str())
@@ -381,7 +389,7 @@ fn get_files_in_dir(dir_path: &str) -> Result<Vec<PathBuf>, std::io::Error> {
     if !dir.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("dir not existed: {}", dir_path),
+            format!("dir not exists: {}", dir_path),
         ));
     }
 
