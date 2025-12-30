@@ -96,7 +96,7 @@ async fn enqueue_task(
     let task = match doc_status {
         0 => Task::new_html_parse_task(payload.id),
         1 => Task::new_pic_download_task(payload.id),
-        2 => Task::new_cbz_archive_task(payload.id),
+        2 | 3 => Task::new_cbz_archive_task(payload.id),
         _ => {
             return (
                 StatusCode::BAD_REQUEST,

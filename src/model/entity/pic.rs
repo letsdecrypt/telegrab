@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use time::OffsetDateTime;
-use time::serde::iso8601;
+use time::serde::rfc3339;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -11,8 +11,8 @@ pub struct Pic {
     pub url: String,
     pub seq: i32,
     pub status: i16,
-    #[serde(with = "iso8601")]
+    #[serde(with = "rfc3339")]
     pub created_at: OffsetDateTime,
-    #[serde(with = "iso8601")]
+    #[serde(with = "rfc3339")]
     pub updated_at: OffsetDateTime,
 }

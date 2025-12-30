@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use time::serde::rfc3339;
 use time::OffsetDateTime;
-use time::serde::iso8601;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -10,7 +10,7 @@ pub struct Doc {
     pub status: i16,
     pub url: String,
     pub page_title: Option<String>,
-    #[serde(with = "iso8601::option")]
+    #[serde(with = "rfc3339::option")]
     pub page_date: Option<OffsetDateTime>,
     pub title: Option<String>,
     pub series: Option<String>,
@@ -47,9 +47,9 @@ pub struct Doc {
     pub age_rating: Option<String>,
     pub community_rating: Option<String>,
     pub critical_rating: Option<String>,
-    #[serde(with = "iso8601")]
+    #[serde(with = "rfc3339")]
     pub created_at: OffsetDateTime,
-    #[serde(with = "iso8601")]
+    #[serde(with = "rfc3339")]
     pub updated_at: OffsetDateTime,
 }
 
@@ -62,49 +62,121 @@ pub struct ShimDoc {
     pub title: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename = "Page")]
+pub struct PageInfo {
+    #[serde(rename = "@Image")]
+    pub image: u32,
+    #[serde(rename = "@Type")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_: Option<String>,
+}
+
+impl PageInfo {
+    pub fn with_count(count: u32) -> Vec<Self> {
+        (0..count)
+            .map(|idx| {
+                let type_str = match idx {
+                    0 => "FrontCover".into(),
+                    _ if idx == count - 1 => "BackCover".into(),
+                    _ => "Story".into(),
+                };
+                Self {
+                    image: idx,
+                    type_: Some(type_str),
+                }
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct ComicInfoXml {
+pub struct Pages{
+    #[serde(rename = "Page")]
+    pub page: Vec<PageInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ComicInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub series: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub volume: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub month: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub day: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub writer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub penciller: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub inker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub colorist: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub letterer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_artist: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub publisher: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub imprint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub genre: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub web: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub page_count: Option<String>,
+    pub pages: Pages,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub black_and_white: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub characters: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub teams: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locations: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scan_information: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub story_arc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub series_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub age_rating: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub community_rating: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub critical_rating: Option<String>,
 }
 
-impl From<Doc> for ComicInfoXml {
-    fn from(doc: Doc) -> Self {
-        ComicInfoXml {
+impl ComicInfo {
+    pub fn from_doc(doc: Doc) -> Self {
+        let page_info = PageInfo::with_count(doc.page_count.clone().unwrap().parse().unwrap_or(0));
+        ComicInfo {
             title: doc.title,
             series: doc.series,
             number: doc.number,
@@ -128,6 +200,7 @@ impl From<Doc> for ComicInfoXml {
             tags: doc.tags,
             web: doc.web,
             page_count: doc.page_count,
+            pages: Pages { page: page_info },
             language: doc.language,
             format: doc.format,
             black_and_white: doc.black_and_white,

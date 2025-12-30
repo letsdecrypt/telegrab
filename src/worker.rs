@@ -1,13 +1,16 @@
-use std::path::Path;
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
 use crate::http_client::{DownloadError, HttpClientManager};
+use crate::model::entity::doc::ComicInfo;
 use crate::model::entity::task::{QueueEvent, TaskStatus, TaskType};
 use crate::state::{AppState, QueueState};
 use crate::{service, Result};
 use sqlx::PgPool;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use zip::write::SimpleFileOptions;
 
 #[derive(Debug, Clone)]
 pub struct TaskWorker {
@@ -107,8 +110,8 @@ impl TaskWorker {
                     TaskType::HtmlParse { id: doc_id } => {
                         self.process_html_parse_task(doc_id).await
                     }
-                    TaskType::PicDownload { id: pic_id } => {
-                        self.process_pic_download_task(pic_id).await
+                    TaskType::PicDownload { id: doc_id } => {
+                        self.process_pic_download_task(doc_id).await
                     }
                     TaskType::CbzArchive { id: doc_id } => {
                         self.process_cbz_archive_task(doc_id).await
@@ -170,7 +173,7 @@ impl TaskWorker {
     async fn process_pic_download_task(&self, id: &i32) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
         let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
-        let last_path_segment = parsed_url.path_segments().unwrap().last().unwrap();;
+        let last_path_segment = parsed_url.path_segments().unwrap().last().unwrap();
         let save_dir = format!("{}/{}", self.pic_dir, last_path_segment);
         ensure_dir_exists(&save_dir).await?;
         let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
@@ -181,21 +184,111 @@ impl TaskWorker {
             let ext = pic_url.split('.').last().unwrap_or("jpg");
             let filename = format_page_filename(i, total, ext);
             let filepath = format!("{}/{}", save_dir, filename);
-             if let Err(err) = self.http_client.download_file(&pic_url,filepath.as_str()).await {
+            if let Err(err) = self
+                .http_client
+                .download_file(&pic_url, filepath.as_str())
+                .await
+            {
                 tracing::warn!(
                     "Worker {} download pic {} failed: {}",
                     self.worker_id,
                     pic_url,
                     err
                 );
-             } else {
+            } else {
                 succeeded += 1;
-             }
+            }
+        }
+        if succeeded == total {
+            service::doc::update_doc_status(&self.db_pool, *id, 2).await?;
         }
         Ok(Some(format!("{},{}/{}", save_dir, succeeded, total)))
     }
     async fn process_cbz_archive_task(&self, id: &i32) -> Result<Option<String>> {
-        todo!("Archive html doc {}", id);
+        let mut doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
+        let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
+        doc.page_count = Some(pics.len().to_string());
+        let doc_xml = ComicInfo::from_doc(doc.clone());
+        let mut xml = String::new();
+        quick_xml::se::to_writer(&mut xml, &doc_xml).expect("Failed to serialize ComicInfo Xml");
+        let xml_with_decl = format!(r#"<?xml version="1.0" encoding="utf-8"?>{}"#, xml);
+        let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
+        let last_path_segment = parsed_url.path_segments().unwrap().last().unwrap();
+        let save_dir = format!("{}/{}", self.cbz_dir, last_path_segment);
+        ensure_dir_exists(&save_dir).await?;
+        let pic_dir = format!("{}/{}", self.pic_dir, last_path_segment);
+        let files_result = get_files_in_dir(pic_dir.as_str());
+        if let Err(err) = files_result {
+            tracing::warn!(
+                "Worker {} get files in dir {} failed: {}",
+                self.worker_id,
+                pic_dir,
+                err
+            );
+            return Ok(None);
+        }
+        let cbz_filename = match (doc.writer, doc.title, doc.page_title) {
+            (Some(writer), Some(title), _) => format!("[{}]{}", writer, title),
+            (_, None, Some(page_title)) => format!("{}", page_title),
+            _ => last_path_segment.to_string(),
+        };
+        let zip_file = std::fs::File::create(format!("{}/{}.cbz", save_dir, cbz_filename))?;
+        let mut zip_writer = zip::ZipWriter::new(zip_file);
+        let r = zip_writer.start_file("ComicInfo.xml", SimpleFileOptions::default());
+        if let Err(err) = r {
+            tracing::warn!(
+                "Worker {} start file {} in zip failed: {}",
+                self.worker_id,
+                "ComicInfo.xml",
+                err
+            );
+            return Ok(None);
+        }
+        let r = zip_writer.write_all(xml_with_decl.as_bytes());
+        if let Err(err) = r {
+            tracing::warn!(
+                "Worker {} write file {} in zip failed: {}",
+                self.worker_id,
+                "ComicInfo.xml",
+                err
+            );
+            return Ok(None);
+        }
+
+        let files = files_result?;
+        let simple_options = SimpleFileOptions::default();
+        for file in files {
+            let filename = file.file_name().unwrap().to_string_lossy().to_string();
+            let r = zip_writer.start_file(filename.clone(), simple_options);
+            if let Err(err) = r {
+                tracing::warn!(
+                    "Worker {} add file {} to zip failed: {}",
+                    self.worker_id,
+                    filename,
+                    err
+                );
+                return Ok(None);
+            }
+            let img = std::fs::read(file)?;
+            let r = zip_writer.write_all(&img);
+            if let Err(err) = r {
+                tracing::warn!(
+                    "Worker {} write file {} in zip failed: {}",
+                    self.worker_id,
+                    filename,
+                    err
+                );
+                return Ok(None);
+            }
+        }
+        let r = zip_writer.finish();
+        if let Err(err) = r {
+            tracing::warn!("Worker {} finish zip file failed: {}", self.worker_id, err);
+            return Ok(None);
+        } else {
+            service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
+        }
+        Ok(None)
     }
     async fn wait_for_current_tasks(&self) {
         let active_tasks = self.queue_state.active_task_count().await;
@@ -277,7 +370,31 @@ async fn ensure_dir_exists(p: &str) -> Result<()> {
     Ok(())
 }
 
-fn format_page_filename(page_idx:usize,total_pages:usize,ext:&str) -> String{
-    let num_digits = ((total_pages as f64).log10().floor() as usize+1).max(3);
+fn format_page_filename(page_idx: usize, total_pages: usize, ext: &str) -> String {
+    let num_digits = ((total_pages as f64).log10().floor() as usize + 1).max(3);
     format!("{:0width$}.{}", page_idx, ext, width = num_digits)
+}
+
+fn get_files_in_dir(dir_path: &str) -> Result<Vec<PathBuf>, std::io::Error> {
+    let dir = Path::new(dir_path);
+
+    if !dir.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("dir not existed: {}", dir_path),
+        ));
+    }
+
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // 只保留文件（排除目录）
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+
+    Ok(files)
 }

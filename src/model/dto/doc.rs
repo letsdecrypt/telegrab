@@ -12,7 +12,7 @@ pub struct CreateDocReq {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateDocReq {
     pub page_title: Option<String>,
-    #[serde(default, with = "time::serde::iso8601::option")]
+    #[serde(default, with = "time::serde::rfc3339::option")]
     pub page_date: Option<OffsetDateTime>,
     pub title: Option<String>,
     pub series: Option<String>,

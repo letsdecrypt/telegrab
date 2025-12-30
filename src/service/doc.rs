@@ -176,7 +176,7 @@ pub async fn update_parsed_doc(
     let parsed_date = p.date.as_deref().and_then(|date_str| {
         OffsetDateTime::parse(
             date_str,
-            &time::format_description::well_known::Iso8601::DEFAULT,
+            &time::format_description::well_known::Rfc3339,
         )
         .ok()
     });
@@ -200,4 +200,18 @@ pub async fn update_parsed_doc(
     }
     tx.commit().await?;
     Ok(doc)
+}
+
+pub async fn update_doc_status(
+    pool: &PgPool,
+    id: i32,
+    status: i32,
+) -> Result<u64, sqlx::Error> {
+    let sql = "UPDATE doc SET status = $1 WHERE id = $2";
+    sqlx::query(sql)
+        .bind(status)
+        .bind(id)
+        .execute(pool)
+        .await
+        .map(|r| r.rows_affected())
 }
