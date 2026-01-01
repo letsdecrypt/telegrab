@@ -1,17 +1,17 @@
-use crate::Result;
 use crate::errors;
 use crate::format;
 use crate::model::dto;
-use crate::model::dto::AffectedRows;
 use crate::model::dto::doc::UpdateDocReq;
 use crate::model::dto::pagination::PaginationQuery;
+use crate::model::dto::AffectedRows;
 use crate::service;
 use crate::state::AppState;
+use crate::Result;
 use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
-use axum::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 
 pub fn routers() -> Router<AppState> {
@@ -20,6 +20,7 @@ pub fn routers() -> Router<AppState> {
         .route("/", get(get_docs_handler))
         .route("/", post(create_doc_handler))
         .route("/{id}", get(get_doc_handler))
+        .route("/{id}/pics", get(get_pics_by_doc_id_handler))
         .route("/{id}", patch(update_doc_handler))
         .route("/{id}", delete(delete_doc_handler))
 }
@@ -56,6 +57,15 @@ async fn get_doc_handler(State(state): State<AppState>, Path(id): Path<i32>) -> 
     let doc = service::doc::get_doc_by_id(&state.db_pool, id).await?;
     format::json(doc)
 }
+
+async fn get_pics_by_doc_id_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<Response> {
+    let pics = service::pic::get_pics_by_doc_id(&state.db_pool, id).await?;
+    format::json(pics)
+}
+
 async fn update_doc_handler(
     State(state): State<AppState>,
     Path(id): Path<i32>,

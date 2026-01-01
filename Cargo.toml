@@ -52,7 +52,7 @@ time = { version = "0.3.44", features = ["serde-human-readable"] }
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros"] }
 tokio-stream = { version = "0.1.17", features = ["sync"] }
 tower = "0.5.2"
-tower-http = { version = "0.6.8", features = ["compression-full", "trace", "add-extension", "set-header"] }
+tower-http = { version = "0.6.8", features = ["compression-full", "trace", "add-extension", "set-header","fs"] }
 tower-sessions = "0.14.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }

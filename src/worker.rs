@@ -190,6 +190,7 @@ impl TaskWorker {
                     self.worker_id,
                     filepath
                 );
+                succeeded += 1;
                 continue;
             }
             if let Err(err) = self
@@ -240,7 +241,8 @@ impl TaskWorker {
             (_, None, Some(page_title)) => format!("{}", page_title),
             _ => last_path_segment.to_string(),
         };
-        let zip_file = std::fs::File::create(format!("{}/{}.cbz", save_dir, cbz_filename))?;
+        let zip_file_path = format!("{}/{}.cbz", save_dir, cbz_filename);
+        let zip_file = std::fs::File::create(&zip_file_path)?;
         let mut zip_writer = zip::ZipWriter::new(zip_file);
         let r = zip_writer.start_file("ComicInfo.xml", SimpleFileOptions::default());
         if let Err(err) = r {
@@ -295,6 +297,7 @@ impl TaskWorker {
             return Ok(None);
         } else {
             service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
+            service::cbz::create_cbz_with_doc_id(&self.db_pool, *id, zip_file_path).await?;
         }
         Ok(None)
     }

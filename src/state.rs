@@ -188,6 +188,8 @@ pub struct AppState {
     pub http_client: Arc<HttpClientManager>,
     pub base_url: String,
     pub worker_count: usize,
+    pub pic_dir: String,
+    pub cbz_dir: String,
 }
 
 impl AppState {
@@ -219,6 +221,8 @@ impl AppState {
             http_client,
             base_url: configuration.application.base_url.clone(),
             worker_count: configuration.worker.count,
+            pic_dir: configuration.pic_dir.clone(),
+            cbz_dir: configuration.cbz_dir.clone(),
         }
     }
 }

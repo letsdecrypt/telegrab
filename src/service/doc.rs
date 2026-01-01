@@ -68,7 +68,7 @@ pub async fn get_docs(
 }
 
 pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<ShimDoc>, sqlx::Error> {
-    let sql = "SELECT id, url, page_title, title FROM doc WHERE status = 1 ORDER BY doc.id";
+    let sql = "SELECT id, url, page_title, title FROM doc WHERE status > 0 ORDER BY doc.id";
     sqlx::query_as::<_, ShimDoc>(sql).fetch_all(pool).await
 }
 
@@ -176,15 +176,16 @@ pub async fn update_parsed_doc(
     let parsed_date = p.date.as_deref().and_then(|date_str| {
         OffsetDateTime::parse(
             date_str,
-            &time::format_description::well_known::Rfc3339,
+            &time::format_description::well_known::Iso8601::DEFAULT,
         )
         .ok()
     });
     let doc_sql =
-        r#"UPDATE doc SET page_title = $1, page_date = $2, status = 1 WHERE id = $3 RETURNING *"#;
+        r#"UPDATE doc SET page_title = $1, page_date = $2, page_count = $3, status = 1 WHERE id = $4 RETURNING *"#;
     let doc = sqlx::query_as::<_, Doc>(doc_sql)
         .bind(p.title)
         .bind(parsed_date)
+        .bind(p.image_urls.len().to_string())
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
