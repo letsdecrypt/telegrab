@@ -38,14 +38,9 @@ impl QueueState {
     pub async fn register_active_task(&self, task: &Task, worker_id: usize) {
         let mut active_tasks = self.active_tasks.write().await;
 
-        let task_type_str = match task.task_type {
-            TaskType::HtmlParse { .. } => "html".to_string(),
-            TaskType::PicDownload { .. } => "pic".to_string(),
-            TaskType::CbzArchive { .. } => "cbz".to_string(),
-        };
         let active_task = ActiveTaskInfo {
             task_id: task.id.clone(),
-            task_type: task_type_str,
+            task_type: task.task_type.clone(),
             description: task.description(),
             worker_id,
             started_at: OffsetDateTime::now_utc(),
@@ -90,6 +85,14 @@ impl QueueState {
     pub async fn active_task_count(&self) -> usize {
         let active_tasks = self.active_tasks.read().await;
         active_tasks.len()
+    }
+    pub async fn is_active(&self, doc_id: i32) -> bool {
+        let active_tasks = self.active_tasks.read().await;
+        active_tasks.values().any(|t| match t.task_type {
+            TaskType::HtmlParse { id } => id == doc_id,
+            TaskType::PicDownload { id } => id == doc_id,
+            TaskType::CbzArchive { id } => id == doc_id,
+        })
     }
     pub async fn size(&self) -> usize {
         let tasks = self.tasks.read().await;
@@ -150,9 +153,10 @@ impl QueueState {
         let mut tasks = self.tasks.write().await;
         let cleared: Vec<Task> = tasks.drain(..).collect();
         if !cleared.is_empty()
-            && let Err(e) = self.sender.send(QueueEvent::QueueCleared) {
-                tracing::warn!("send tasks cleared event failed: {:?}", e);
-            }
+            && let Err(e) = self.sender.send(QueueEvent::QueueCleared)
+        {
+            tracing::warn!("send tasks cleared event failed: {:?}", e);
+        }
         cleared
     }
     pub async fn cleanup_completed_tasks(&self, keep_recent: usize) -> usize {

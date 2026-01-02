@@ -130,7 +130,7 @@ pub struct QueueStats {
 #[serde(rename_all = "camelCase")]
 pub struct ActiveTaskInfo {
     pub task_id: String,
-    pub task_type: String,
+    pub task_type: TaskType,
     pub description: String,
     pub worker_id: usize,
     pub started_at: OffsetDateTime,

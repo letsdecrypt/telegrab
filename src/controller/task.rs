@@ -76,6 +76,17 @@ async fn enqueue_task(
         );
     }
     let doc_id = payload.id;
+    if state.queue_state.is_active(doc_id).await {
+        return (
+            StatusCode::CONFLICT,
+            Json(EnqueueResponse {
+                task_id: "".to_string(),
+                task_type: "".to_string(),
+                message: "Task is already active".to_string(),
+                queue_size: 0,
+            }),
+        );
+    }
     let doc_result = service::doc::get_doc_by_id(&state.db_pool, doc_id).await;
     let doc = match doc_result {
         Ok(doc) => doc,
@@ -92,7 +103,6 @@ async fn enqueue_task(
         }
     };
     let doc_status = doc.status;
-
     let task = match doc_status {
         0 => Task::new_html_parse_task(payload.id),
         1 => Task::new_pic_download_task(payload.id),
