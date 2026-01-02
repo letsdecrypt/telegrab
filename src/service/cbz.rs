@@ -40,6 +40,14 @@ pub async fn get_cbz_by_doc_id(db_pool: &PgPool, doc_id: i32) -> Result<Cbz, sql
         .await
 }
 
+pub async fn get_cbz_by_path(db_pool: &PgPool, path: String) -> Result<Option<Cbz>, sqlx::Error> {
+    let query = "SELECT * FROM cbz WHERE path = $1";
+    sqlx::query_as::<_, Cbz>(query)
+        .bind(path)
+        .fetch_optional(db_pool)
+        .await
+}
+
 pub async fn get_cbz_page(
     pool: &PgPool,
     query: &PaginationQuery,

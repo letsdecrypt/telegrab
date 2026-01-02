@@ -1,11 +1,12 @@
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
-use crate::http_client::{DownloadError, HttpClientManager};
+use crate::http_client::HttpClientManager;
 use crate::model::entity::doc::ComicInfo;
 use crate::model::entity::task::{QueueEvent, TaskStatus, TaskType};
 use crate::state::{AppState, QueueState};
 use crate::{service, Result};
 use sqlx::PgPool;
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -116,6 +117,10 @@ impl TaskWorker {
                     TaskType::CbzArchive { id: doc_id } => {
                         self.process_cbz_archive_task(doc_id).await
                     }
+                    TaskType::ScanDir => self.process_scan_dir_task().await,
+                    TaskType::RemoveCbz { id: cbz_id } => {
+                        self.process_remove_cbz_task(cbz_id).await
+                    }
                 };
                 self.queue_state.unregister_active_task(&task.id).await;
                 match result {
@@ -223,8 +228,7 @@ impl TaskWorker {
         let xml_with_decl = format!(r#"<?xml version="1.0" encoding="utf-8"?>{}"#, xml);
         let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
         let last_path_segment = parsed_url.path_segments().unwrap().last().unwrap();
-        let save_dir = format!("{}/{}", self.cbz_dir, last_path_segment);
-        ensure_dir_exists(&save_dir).await?;
+        ensure_dir_exists(&self.cbz_dir).await?;
         let pic_dir = format!("{}/{}", self.pic_dir, last_path_segment);
         let files_result = get_files_in_dir(pic_dir.as_str());
         if let Err(err) = files_result {
@@ -241,7 +245,7 @@ impl TaskWorker {
             (_, None, Some(page_title)) => format!("{}", page_title),
             _ => last_path_segment.to_string(),
         };
-        let zip_file_path = format!("{}/{}.cbz", save_dir, cbz_filename);
+        let zip_file_path = format!("{}/{}.cbz", self.cbz_dir, cbz_filename);
         let zip_file = std::fs::File::create(&zip_file_path)?;
         let mut zip_writer = zip::ZipWriter::new(zip_file);
         let r = zip_writer.start_file("ComicInfo.xml", SimpleFileOptions::default());
@@ -297,8 +301,31 @@ impl TaskWorker {
             return Ok(None);
         } else {
             service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
-            service::cbz::create_cbz_with_doc_id(&self.db_pool, *id, zip_file_path).await?;
+            service::cbz::create_cbz_with_doc_id(&self.db_pool, *id, format!("{}.cbz", cbz_filename)).await?;
         }
+        Ok(None)
+    }
+    async fn process_scan_dir_task(&self) -> Result<Option<String>> {
+        let dir = PathBuf::from(self.cbz_dir.as_str());
+        let mut files = HashSet::new();
+        scan_dir_recursive(&dir, &mut files).await;
+        for file in files {
+            let filename = file.file_name().unwrap().to_string_lossy().to_string();
+            let cbz_in_db = service::cbz::get_cbz_by_path(&self.db_pool, filename.clone()).await?;
+            if cbz_in_db.is_none() {
+                service::cbz::create_cbz(&self.db_pool, filename.clone()).await?;
+            }
+        }
+        Ok(None)
+    }
+    async fn process_remove_cbz_task(&self, cbz_id: &i32) -> Result<Option<String>> {
+        let cbz = service::cbz::get_cbz_by_id(&self.db_pool, *cbz_id).await?;
+        let cbz_path = format!("{}/{}", self.cbz_dir, cbz.path);
+        if let Err(err) = std::fs::remove_file(cbz_path) {
+            tracing::warn!("Remove cbz {} failed: {}", cbz_id, err);
+            return Ok(None);
+        }
+        service::cbz::remove_cbz_by_id(&self.db_pool, *cbz_id).await?;
         Ok(None)
     }
     async fn wait_for_current_tasks(&self) {
@@ -408,4 +435,31 @@ fn get_files_in_dir(dir_path: &str) -> Result<Vec<PathBuf>, std::io::Error> {
     }
 
     Ok(files)
+}
+
+async fn scan_dir_recursive(
+    dir_path: &PathBuf,
+    files: &mut HashSet<PathBuf>,
+)  {
+    if !dir_path.is_dir() {
+        tracing::error!("dir not exists: {:?}", dir_path);
+    }
+    let entries = std::fs::read_dir(dir_path).expect("Failed to read dir");
+
+    for entry in entries {
+        if let Err(err) = entry {
+            tracing::error!("Failed to read entry: {:?}", err);
+            continue;
+        }
+        let entry = entry.expect("Failed to read entry");
+        let path = entry.path();
+
+        // 递归处理子目录
+        if path.is_dir() {
+            let fut = Box::pin(scan_dir_recursive(&path, files));
+            fut.await;
+        } else if path.is_file() && path.extension() == Some("cbz".as_ref()) {
+            files.insert(path);
+        }
+    }
 }

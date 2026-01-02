@@ -1,6 +1,6 @@
 use crate::model::entity::task::{
     ActiveTaskResponse, CleanupRequest, CleanupResponse, EnqueueRequest, EnqueueResponse,
-    QueueInfo, QueueStats, Task, TaskStatus, TaskType,
+    QueueInfo, QueueStats, Task, TaskStatus,
 };
 use crate::service;
 use crate::state::AppState;
@@ -76,7 +76,7 @@ async fn enqueue_task(
         );
     }
     let doc_id = payload.id;
-    if state.queue_state.is_active(doc_id).await {
+    if state.queue_state.is_doc_active(doc_id).await {
         return (
             StatusCode::CONFLICT,
             Json(EnqueueResponse {
@@ -121,15 +121,10 @@ async fn enqueue_task(
     };
     state.queue_state.enqueue(task.clone()).await;
     let queue_size = state.queue_state.size().await;
-    let task_type_str = match task.task_type {
-        TaskType::HtmlParse { id: _ } => "HtmlParse",
-        TaskType::PicDownload { id: _ } => "PicDownload",
-        TaskType::CbzArchive { id: _ } => "CbzArchive",
-    };
 
     let response = EnqueueResponse {
         task_id: task.id.clone(),
-        task_type: task_type_str.to_string(),
+        task_type: task.task_type.into(),
         message: "Task added to queue".to_string(),
         queue_size,
     };
@@ -165,7 +160,7 @@ pub async fn sse_handler(
 
     Sse::new(stream).keep_alive(
         KeepAlive::new()
-            .interval(Duration::from_secs(1))
+            .interval(Duration::from_secs(10))
             .text("keep-alive"),
     )
 }

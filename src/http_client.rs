@@ -125,7 +125,7 @@ impl HttpClientManager {
             speed: speed as u64,
         })
     }
-    pub async fn parse_telegraph_post(&self,url:&str) -> crate::Result<TelegraphPost> {
+    pub async fn parse_telegraph_post(&self, url:&str) -> crate::Result<TelegraphPost> {
         // 获取网页内容
         let html_content = self.client.get(url).send().await?.text().await?;
 
@@ -179,6 +179,7 @@ impl HttpClientManager {
         }
 
         Ok(TelegraphPost {
+            url: url.to_string(),
             title,
             date,
             image_urls,

@@ -220,6 +220,7 @@ impl ComicInfo {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TelegraphPost {
+    pub url: String,
     pub title: String,
     pub date: Option<String>,
     pub image_urls: Vec<String>,

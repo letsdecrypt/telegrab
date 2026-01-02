@@ -9,6 +9,6 @@ pub struct UpdateCbzReq {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteCbzReq {
-    pub delete_file: bool,
+    pub delete_file: Option<bool>,
 }
 

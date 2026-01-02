@@ -181,11 +181,12 @@ pub async fn update_parsed_doc(
         .ok()
     });
     let doc_sql =
-        r#"UPDATE doc SET page_title = $1, page_date = $2, page_count = $3, status = 1 WHERE id = $4 RETURNING *"#;
+        r#"UPDATE doc SET page_title = $1, page_date = $2, page_count = $3, web = $4, status = 1 WHERE id = $5 RETURNING *"#;
     let doc = sqlx::query_as::<_, Doc>(doc_sql)
         .bind(p.title)
         .bind(parsed_date)
         .bind(p.image_urls.len().to_string())
+        .bind(p.url.clone())
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;

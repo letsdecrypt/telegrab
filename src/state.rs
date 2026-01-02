@@ -86,13 +86,18 @@ impl QueueState {
         let active_tasks = self.active_tasks.read().await;
         active_tasks.len()
     }
-    pub async fn is_active(&self, doc_id: i32) -> bool {
+    pub async fn is_doc_active(&self, doc_id: i32) -> bool {
         let active_tasks = self.active_tasks.read().await;
         active_tasks.values().any(|t| match t.task_type {
             TaskType::HtmlParse { id } => id == doc_id,
             TaskType::PicDownload { id } => id == doc_id,
             TaskType::CbzArchive { id } => id == doc_id,
+            _ => false,
         })
+    }
+    pub async fn is_scan_active(&self) -> bool {
+        let active_tasks = self.active_tasks.read().await;
+        active_tasks.values().any(|t| matches!(t.task_type, TaskType::ScanDir))
     }
     pub async fn size(&self) -> usize {
         let tasks = self.tasks.read().await;

@@ -1,19 +1,18 @@
-use crate::model::dto::cbz::{DeleteCbzReq, UpdateCbzReq};
+use crate::model::dto::cbz::UpdateCbzReq;
 use crate::model::dto::pagination::PaginationQuery;
-use crate::model::dto::AffectedRows;
+use crate::model::entity::task::{EnqueueResponse, Task};
 use crate::state::AppState;
 use crate::{format, service, Result};
 use axum::extract::{Path, Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post, put};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 
 pub fn routers() -> Router<AppState> {
     Router::new()
         .route("/", get(get_cbz_page_handler))
         .route("/", post(scan_cbz_handler))
-        .route("/", put(toggle_auto_scan_or_fs_notify_handler))
         .route("/{id}", get(get_cbz_handler))
         .route("/{id}", delete(remove_cbz_handler))
         .route("/{id}", patch(update_cbz_handler))
@@ -38,24 +37,55 @@ pub async fn get_cbz_handler(
 }
 
 pub async fn scan_cbz_handler(State(state): State<AppState>) -> impl IntoResponse {
-    "scan_cbz_handler"
+    if state.shutdown.is_shutting_down().await {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(EnqueueResponse {
+                task_id: "".to_string(),
+                task_type: "".to_string(),
+                message: "Server is shutting down, no new tasks accepted".to_string(),
+                queue_size: 0,
+            }),
+        );
+    }
+    if state.queue_state.is_scan_active().await {
+        return (
+            StatusCode::CONFLICT,
+            Json(EnqueueResponse {
+                task_id: "".to_string(),
+                task_type: "".to_string(),
+                message: "Scan is active, no new scan tasks accepted".to_string(),
+                queue_size: 0,
+            }),
+        );
+    }
+    let task = Task::new_scan_dir_task();
+    state.queue_state.enqueue(task.clone()).await;
+    let queue_size = state.queue_state.size().await;
+
+    let response = EnqueueResponse {
+        task_id: task.id.clone(),
+        task_type: task.task_type.into(),
+        message: "Scan directory task enqueued".to_string(),
+        queue_size,
+    };
+    (StatusCode::CREATED, Json(response))
 }
 
-pub async fn toggle_auto_scan_or_fs_notify_handler(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    "toggle_auto_scan_or_fs_notify_handler"
-}
 pub async fn remove_cbz_handler(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-    Json(params): Json<DeleteCbzReq>,
 ) -> Result<Response> {
-    // todo: remove link, and remove file
-    let delete_file = params.delete_file;
-    let count = service::cbz::remove_cbz_by_id(&state.db_pool, id).await?;
-    let affected_rows = AffectedRows::new(count);
-    format::json(affected_rows)
+    let task = Task::new_remove_cbz_task(id);
+    state.queue_state.enqueue(task.clone()).await;
+    let queue_size = state.queue_state.size().await;
+    let response = EnqueueResponse {
+        task_id: task.id.clone(),
+        task_type: task.task_type.into(),
+        message: "Remove cbz task enqueued".to_string(),
+        queue_size,
+    };
+    format::json(response)
 }
 
 pub async fn update_cbz_handler(

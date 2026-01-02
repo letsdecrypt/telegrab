@@ -8,6 +8,8 @@ pub enum TaskType {
     HtmlParse { id: i32 },
     PicDownload { id: i32 },
     CbzArchive { id: i32 },
+    ScanDir,
+    RemoveCbz { id: i32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +70,30 @@ impl Task {
             error: None,
         }
     }
+    pub fn new_scan_dir_task() -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            task_type: TaskType::ScanDir,
+            status: TaskStatus::Pending,
+            created_at: OffsetDateTime::now_utc(),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+        }
+    }
+    pub fn new_remove_cbz_task(cbz_id: i32) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            task_type: TaskType::RemoveCbz { id: cbz_id },
+            status: TaskStatus::Pending,
+            created_at: OffsetDateTime::now_utc(),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+        }
+    }
     pub fn mark_processing(&mut self) {
         self.status = TaskStatus::Processing;
         self.started_at = Some(OffsetDateTime::now_utc());
@@ -84,13 +110,29 @@ impl Task {
     }
     pub fn description(&self) -> String {
         match &self.task_type {
-            TaskType::HtmlParse { id: doc_id } => format!("Parse doc: {})", doc_id),
+            TaskType::HtmlParse { id: doc_id } => format!("Parse doc: {}", doc_id),
             TaskType::PicDownload { id: pic_id } => {
                 format!("Download pic: {}", pic_id)
             }
             TaskType::CbzArchive { id: doc_id } => {
                 format!("Archive doc: {}", doc_id)
             }
+            TaskType::ScanDir => "Scan dir".to_string(),
+            TaskType::RemoveCbz { id: cbz_id } => {
+                format!("Remove cbz: {}", cbz_id)
+            }
+        }
+    }
+}
+
+impl Into<String> for TaskType {
+    fn into(self) -> String {
+        match self {
+            TaskType::HtmlParse { id } => format!("HtmlParse: {}", id),
+            TaskType::PicDownload { id } => format!("PicDownload: {}", id),
+            TaskType::CbzArchive { id } => format!("CbzArchive: {}", id),
+            TaskType::ScanDir => "ScanDir".to_string(),
+            TaskType::RemoveCbz { id } => format!("RemoveCbz: {}", id),
         }
     }
 }
