@@ -7,14 +7,14 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 
 pub async fn create_doc(pool: &PgPool, req: CreateDocReq) -> Result<Doc, sqlx::Error> {
-    let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *";
+    let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *, (SELECT id FROM cbz WHERE doc_id = $5) AS cbz_id";
     sqlx::query_as::<_, Doc>(sql)
         .bind(req.url)
         .fetch_one(pool)
         .await
 }
 pub async fn get_doc_by_id(pool: &PgPool, id: i32) -> Result<Doc, sqlx::Error> {
-    let sql = "SELECT * FROM doc WHERE id = $1";
+    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = $1";
     sqlx::query_as::<_, Doc>(sql).bind(id).fetch_one(pool).await
 }
 
@@ -54,7 +54,7 @@ pub async fn get_docs(
 
     // 执行查询获取数据
     let docs = sqlx::query_as::<_, Doc>(&format!(
-        "SELECT * FROM doc{}{}",
+        "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id{}{}",
         sort_clause, pagination_clause
     ))
     .fetch_all(pool)
@@ -68,7 +68,7 @@ pub async fn get_docs(
 }
 
 pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<ShimDoc>, sqlx::Error> {
-    let sql = "SELECT id, url, page_title, title FROM doc WHERE status > 0 ORDER BY doc.id";
+    let sql = "SELECT doc.id, cbz.id as cbz_id, url, page_title, title FROM doc left join cbz on doc.id = cbz.doc_id WHERE status > 0 ORDER BY doc.id";
     sqlx::query_as::<_, ShimDoc>(sql).fetch_all(pool).await
 }
 
@@ -122,7 +122,8 @@ pub async fn update_doc(pool: &PgPool, id: i32, req: UpdateDocReq) -> Result<Doc
         critical_rating = $37,
         updated_at = now()
     WHERE id = $38
-    RETURNING *"#;
+    RETURNING *, (SELECT id FROM cbz WHERE doc_id = $5) AS cbz_id
+    "#;
 
     sqlx::query_as::<_, Doc>(sql)
         .bind(req.page_title)
@@ -180,8 +181,7 @@ pub async fn update_parsed_doc(
         )
         .ok()
     });
-    let doc_sql =
-        r#"UPDATE doc SET page_title = $1, page_date = $2, page_count = $3, web = $4, status = 1 WHERE id = $5 RETURNING *"#;
+    let doc_sql = r#"UPDATE doc SET page_title = $1, page_date = $2, page_count = $3, web = $4, status = 1 WHERE id = $5 RETURNING *, (SELECT id FROM cbz WHERE doc_id = $5) AS cbz_id"#;
     let doc = sqlx::query_as::<_, Doc>(doc_sql)
         .bind(p.title)
         .bind(parsed_date)
@@ -204,11 +204,7 @@ pub async fn update_parsed_doc(
     Ok(doc)
 }
 
-pub async fn update_doc_status(
-    pool: &PgPool,
-    id: i32,
-    status: i32,
-) -> Result<u64, sqlx::Error> {
+pub async fn update_doc_status(pool: &PgPool, id: i32, status: i32) -> Result<u64, sqlx::Error> {
     let sql = "UPDATE doc SET status = $1 WHERE id = $2";
     sqlx::query(sql)
         .bind(status)

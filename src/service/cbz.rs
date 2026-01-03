@@ -32,11 +32,11 @@ pub async fn get_cbz_by_id(db_pool: &PgPool, id: i32) -> Result<Cbz, sqlx::Error
         .await
 }
 
-pub async fn get_cbz_by_doc_id(db_pool: &PgPool, doc_id: i32) -> Result<Cbz, sqlx::Error> {
+pub async fn get_cbz_by_doc_id(db_pool: &PgPool, doc_id: i32) -> Result<Option<Cbz>, sqlx::Error> {
     let query = "SELECT * FROM cbz WHERE doc_id = $1";
     sqlx::query_as::<_, Cbz>(query)
         .bind(doc_id)
-        .fetch_one(db_pool)
+        .fetch_optional(db_pool)
         .await
 }
 
@@ -109,10 +109,17 @@ pub async fn update_cbz(
         .await
 }
 
-pub async fn remove_cbz_by_id(
-    db_pool: &PgPool,
-    id: i32,
-) -> Result<u64, sqlx::Error> {
+pub async fn update_cbz_doc_id_with_path(db_pool: &PgPool, doc_id: i32, path: String)  -> Result<u64, sqlx::Error>{
+    let query = "UPDATE cbz SET doc_id = $1 WHERE path = $2";
+    sqlx::query(query)
+        .bind(doc_id)
+        .bind(path)
+        .execute(db_pool)
+        .await
+        .map(|r| r.rows_affected())
+}
+
+pub async fn remove_cbz_by_id(db_pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
     let query = "DELETE FROM cbz WHERE id = $1";
     sqlx::query(query)
         .bind(id)

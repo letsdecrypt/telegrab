@@ -7,6 +7,7 @@ use time::OffsetDateTime;
 #[serde(rename_all = "camelCase")]
 pub struct Doc {
     pub id: i32,
+    pub cbz_id: Option<i32>,
     pub status: i16,
     pub url: String,
     pub page_title: Option<String>,

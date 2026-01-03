@@ -305,12 +305,18 @@ impl TaskWorker {
             return Ok(None);
         } else {
             service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
-            service::cbz::create_cbz_with_doc_id(
-                &self.db_pool,
-                *id,
-                format!("{}.cbz", cbz_filename),
-            )
-            .await?;
+            let cbz_path = format!("{}.cbz", cbz_filename);
+            let cbz_option = service::cbz::get_cbz_by_path(&self.db_pool, cbz_path.clone()).await?;
+            if let Some(cbz) = cbz_option {
+                service::cbz::update_cbz(&self.db_pool, cbz.id, Some(*id)).await?;
+            } else {
+                service::cbz::create_cbz_with_doc_id(
+                    &self.db_pool,
+                    *id,
+                    cbz_path,
+                )
+                .await?;
+            }
         }
         Ok(None)
     }
