@@ -63,6 +63,8 @@ log = "0.4.29"
 url = "2.5.7"
 zip = "7.0.0"
 quick-xml = { version = "0.38.4", features = ["serialize"] }
+notify = "8.2.0"
+futures = "0.3.31"
 
 [dev-dependencies]
 claim = "0.5.0"

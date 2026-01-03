@@ -2,7 +2,7 @@
 create table pic
 (
     id         serial primary key,
-    doc_id     int         not null references doc (id),
+    doc_id     int         not null references doc (id) on delete cascade,
     url        text        not null unique,
     seq        int         not null,
     status     smallint             default 0, -- 0: new, 1: downloaded, 2: error

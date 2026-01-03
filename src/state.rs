@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{broadcast, Notify, RwLock};
+use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct QueueState {
@@ -97,7 +97,9 @@ impl QueueState {
     }
     pub async fn is_scan_active(&self) -> bool {
         let active_tasks = self.active_tasks.read().await;
-        active_tasks.values().any(|t| matches!(t.task_type, TaskType::ScanDir))
+        active_tasks
+            .values()
+            .any(|t| matches!(t.task_type, TaskType::ScanDir))
     }
     pub async fn size(&self) -> usize {
         let tasks = self.tasks.read().await;
@@ -192,6 +194,7 @@ impl QueueState {
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub queue_state: QueueState,
+    pub fs_watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
     pub shutdown: Arc<GracefulShutdown>,
     pub db_pool: Arc<PgPool>,
     pub http_client: Arc<HttpClientManager>,
@@ -206,7 +209,7 @@ impl AppState {
         let queue_state = QueueState::new();
         let db_pool = Arc::new(
             PgPoolOptions::new()
-                .acquire_timeout(std::time::Duration::from_secs(2))
+                .acquire_timeout(Duration::from_secs(2))
                 .connect_lazy_with(configuration.database.with_db()),
         );
         let shutdown = Arc::new(GracefulShutdown::new());
@@ -225,6 +228,7 @@ impl AppState {
 
         Self {
             queue_state,
+            fs_watcher: Arc::new(Mutex::new(None)),
             shutdown,
             db_pool,
             http_client,

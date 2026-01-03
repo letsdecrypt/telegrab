@@ -2,9 +2,11 @@ use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
 use crate::http_client::HttpClientManager;
 use crate::model::entity::doc::ComicInfo;
-use crate::model::entity::task::{QueueEvent, TaskStatus, TaskType};
+use crate::model::entity::task::{QueueEvent, Task, TaskStatus, TaskType};
 use crate::state::{AppState, QueueState};
 use crate::{service, Result};
+use notify::event::{CreateKind, RemoveKind};
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use sqlx::PgPool;
 use std::collections::HashSet;
 use std::io::Write;
@@ -121,6 +123,8 @@ impl TaskWorker {
                     TaskType::RemoveCbz { id: cbz_id } => {
                         self.process_remove_cbz_task(cbz_id).await
                     }
+                    TaskType::FSCbzAdded { path } => self.process_fs_cbz_added_task(path).await,
+                    TaskType::FSCbzRemoved { path } => self.process_fs_cbz_removed_task(path).await,
                 };
                 self.queue_state.unregister_active_task(&task.id).await;
                 match result {
@@ -301,7 +305,12 @@ impl TaskWorker {
             return Ok(None);
         } else {
             service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
-            service::cbz::create_cbz_with_doc_id(&self.db_pool, *id, format!("{}.cbz", cbz_filename)).await?;
+            service::cbz::create_cbz_with_doc_id(
+                &self.db_pool,
+                *id,
+                format!("{}.cbz", cbz_filename),
+            )
+            .await?;
         }
         Ok(None)
     }
@@ -323,9 +332,22 @@ impl TaskWorker {
         let cbz_path = format!("{}/{}", self.cbz_dir, cbz.path);
         if let Err(err) = std::fs::remove_file(cbz_path) {
             tracing::warn!("Remove cbz {} failed: {}", cbz_id, err);
-            return Ok(None);
         }
         service::cbz::remove_cbz_by_id(&self.db_pool, *cbz_id).await?;
+        Ok(None)
+    }
+    async fn process_fs_cbz_added_task(&self, path: &str) -> Result<Option<String>> {
+        let cbz_in_db = service::cbz::get_cbz_by_path(&self.db_pool, path.to_string()).await?;
+        if cbz_in_db.is_none() {
+            service::cbz::create_cbz(&self.db_pool, path.to_string()).await?;
+        }
+        Ok(None)
+    }
+    async fn process_fs_cbz_removed_task(&self, path: &str) -> Result<Option<String>> {
+        let cbz_in_db = service::cbz::get_cbz_by_path(&self.db_pool, path.to_string()).await?;
+        if let Some(cbz) = cbz_in_db {
+            service::cbz::remove_cbz_by_id(&self.db_pool, cbz.id).await?;
+        }
         Ok(None)
     }
     async fn wait_for_current_tasks(&self) {
@@ -388,7 +410,7 @@ pub async fn start_auto_cleanup_task(state: AppState, configuration: Settings) {
                 }
                 _ = tokio::time::sleep(Duration::from_secs(cleanup_interval)) => {
                     let removed_count = state.queue_state.cleanup_completed_tasks(max_completed_tasks).await;
-                    if removed_count>0{
+                    if removed_count > 0{
                         tracing::info!("{} tasks cleaned", removed_count);
                         let tasks = state.queue_state.get_tasks().await;
                         let remaining_completed = tasks.iter().filter(|t| matches!(t.status, TaskStatus::Completed)).count();
@@ -398,6 +420,54 @@ pub async fn start_auto_cleanup_task(state: AppState, configuration: Settings) {
             }
         }
     });
+}
+pub async fn setup_fs_monitor(state: AppState, configuration: Settings) {
+    let cbz_dir = configuration.cbz_dir;
+    let result = ensure_dir_exists(&cbz_dir).await;
+    if let Err(err) = result {
+        tracing::error!("Failed to ensure cbz dir exists: {:?}", err);
+        return;
+    }
+    state.queue_state.enqueue(Task::new_scan_dir_task()).await;
+    let watch_path = Path::new(&cbz_dir);
+    let mut watcher = notify::recommended_watcher(move |evt: Result<Event, notify::Error>| {
+        if let Ok(event) = evt {
+            match event.kind {
+                EventKind::Create(CreateKind::File) => {
+                    for path in event.paths {
+                        if path.extension() == Some("cbz".as_ref()) {
+                            let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                            let task = Task::new_fs_cbz_added_task(filename);
+                            futures::executor::block_on(state.queue_state.enqueue(task));
+                        }
+                    }
+                }
+                EventKind::Remove(RemoveKind::File) => {
+                    for path in event.paths {
+                        if path.extension() == Some("cbz".as_ref()) {
+                            let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                            let task = Task::new_fs_cbz_removed_task(filename);
+                            futures::executor::block_on(state.queue_state.enqueue(task));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    })
+    .expect("Failed to create watcher");
+    watcher
+        .watch(watch_path, RecursiveMode::Recursive)
+        .expect("Failed to watch dir");
+    tracing::info!("FS monitor watching dir: {:?}", watch_path);
+    let mut fs_watcher = state.fs_watcher.lock().await;
+    *fs_watcher = Some(watcher);
+}
+
+pub async fn stop_fs_monitor(state: AppState) {
+    if let Some(w) = state.fs_watcher.lock().await.take() {
+        drop(w);
+    }
 }
 
 async fn ensure_dir_exists(p: &str) -> Result<()> {
@@ -437,10 +507,7 @@ fn get_files_in_dir(dir_path: &str) -> Result<Vec<PathBuf>, std::io::Error> {
     Ok(files)
 }
 
-async fn scan_dir_recursive(
-    dir_path: &PathBuf,
-    files: &mut HashSet<PathBuf>,
-)  {
+async fn scan_dir_recursive(dir_path: &PathBuf, files: &mut HashSet<PathBuf>) {
     if !dir_path.is_dir() {
         tracing::error!("dir not exists: {:?}", dir_path);
     }
