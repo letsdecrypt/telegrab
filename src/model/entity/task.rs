@@ -12,6 +12,7 @@ pub enum TaskType {
     RemoveCbz { id: i32 },
     FSCbzAdded { path: String },
     FSCbzRemoved { path: String },
+    HtmlParseAll,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +121,18 @@ impl Task {
             error: None,
         }
     }
+    pub fn new_html_parse_all_task() -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            task_type: TaskType::HtmlParseAll,
+            status: TaskStatus::Pending,
+            created_at: OffsetDateTime::now_utc(),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+        }
+    }
     pub fn mark_processing(&mut self) {
         self.status = TaskStatus::Processing;
         self.started_at = Some(OffsetDateTime::now_utc());
@@ -149,6 +162,7 @@ impl Task {
             }
             TaskType::FSCbzAdded { path } => format!("FSCbzAdded: {}", path),
             TaskType::FSCbzRemoved { path } => format!("FSCbzRemoved: {}", path),
+            TaskType::HtmlParseAll => "HtmlParseAll".to_string(),
         }
     }
 }
@@ -163,6 +177,7 @@ impl Into<String> for TaskType {
             TaskType::RemoveCbz { id } => format!("RemoveCbz: {}", id),
             TaskType::FSCbzAdded { path } => format!("FSCbzAdded: {}", path),
             TaskType::FSCbzRemoved { path } => format!("FSCbzRemoved: {}", path),
+            TaskType::HtmlParseAll => "HtmlParseAll".to_string(),
         }
     }
 }

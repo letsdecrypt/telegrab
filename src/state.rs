@@ -101,6 +101,12 @@ impl QueueState {
             .values()
             .any(|t| matches!(t.task_type, TaskType::ScanDir))
     }
+    pub async fn is_parse_all_active(&self)->bool{
+        let active_tasks = self.active_tasks.read().await;
+        active_tasks
+            .values()
+            .any(|t| matches!(t.task_type, TaskType::HtmlParseAll))
+    }
     pub async fn size(&self) -> usize {
         let tasks = self.tasks.read().await;
         tasks.len()

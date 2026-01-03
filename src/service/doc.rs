@@ -7,7 +7,7 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 
 pub async fn create_doc(pool: &PgPool, req: CreateDocReq) -> Result<Doc, sqlx::Error> {
-    let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *, (SELECT id FROM cbz WHERE doc_id = $5) AS cbz_id";
+    let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *, (SELECT id FROM cbz WHERE doc_id = doc.id) AS cbz_id";
     sqlx::query_as::<_, Doc>(sql)
         .bind(req.url)
         .fetch_one(pool)
@@ -71,6 +71,10 @@ pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<ShimDoc>, sqlx::Error>
     let sql = "SELECT doc.id, cbz.id as cbz_id, url, page_title, title FROM doc left join cbz on doc.id = cbz.doc_id WHERE status > 0 ORDER BY doc.id";
     sqlx::query_as::<_, ShimDoc>(sql).fetch_all(pool).await
 }
+pub async fn get_unparsed_docs(pool: &PgPool) -> Result<Vec<Doc>, sqlx::Error> {
+    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE status = 0";
+    sqlx::query_as::<_, Doc>(sql).fetch_all(pool).await
+}
 
 pub async fn delete_doc_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
     let sql = "DELETE FROM doc WHERE id = $1";
@@ -122,7 +126,7 @@ pub async fn update_doc(pool: &PgPool, id: i32, req: UpdateDocReq) -> Result<Doc
         critical_rating = $37,
         updated_at = now()
     WHERE id = $38
-    RETURNING *, (SELECT id FROM cbz WHERE doc_id = $5) AS cbz_id
+    RETURNING *, (SELECT id FROM cbz WHERE doc_id = doc.id) AS cbz_id
     "#;
 
     sqlx::query_as::<_, Doc>(sql)
@@ -192,13 +196,21 @@ pub async fn update_parsed_doc(
         .await?;
 
     let pic_sql = r#"INSERT INTO pic (doc_id, url, seq) VALUES ($1, $2, $3)"#;
+    let check_sql = r#"SELECT COUNT(*) FROM pic WHERE doc_id = $1 and url = $2"#;
     for (i, url) in p.image_urls.iter().enumerate() {
-        sqlx::query(pic_sql)
+        let count: (i64,) = sqlx::query_as(check_sql)
             .bind(id)
             .bind(url)
-            .bind(i as i32)
-            .execute(&mut *tx)
+            .fetch_one(pool)
             .await?;
+        if count.0 == 0 {
+            sqlx::query(pic_sql)
+                .bind(id)
+                .bind(url)
+                .bind(i as i32)
+                .execute(&mut *tx)
+                .await?;
+        }
     }
     tx.commit().await?;
     Ok(doc)

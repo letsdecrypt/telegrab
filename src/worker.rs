@@ -125,6 +125,7 @@ impl TaskWorker {
                     }
                     TaskType::FSCbzAdded { path } => self.process_fs_cbz_added_task(path).await,
                     TaskType::FSCbzRemoved { path } => self.process_fs_cbz_removed_task(path).await,
+                    TaskType::HtmlParseAll => self.process_html_parse_all_task().await,
                 };
                 self.queue_state.unregister_active_task(&task.id).await;
                 match result {
@@ -178,6 +179,18 @@ impl TaskWorker {
         let telegraph_post = self.http_client.parse_telegraph_post(&doc.url).await?;
         let doc = service::doc::update_parsed_doc(&self.db_pool, *id, telegraph_post).await?;
         Ok(doc.page_title)
+    }
+    async fn process_html_parse_all_task(&self) -> Result<Option<String>> {
+        let docs = service::doc::get_unparsed_docs(&self.db_pool).await?;
+        for doc in docs {
+            if doc.status == 1 && doc.page_title.is_some() {
+                continue;
+            }
+            let telegraph_post = self.http_client.parse_telegraph_post(&doc.url).await?;
+            let _doc =
+                service::doc::update_parsed_doc(&self.db_pool, doc.id, telegraph_post).await?;
+        }
+        Ok(None)
     }
     async fn process_pic_download_task(&self, id: &i32) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
@@ -310,12 +323,7 @@ impl TaskWorker {
             if let Some(cbz) = cbz_option {
                 service::cbz::update_cbz(&self.db_pool, cbz.id, Some(*id)).await?;
             } else {
-                service::cbz::create_cbz_with_doc_id(
-                    &self.db_pool,
-                    *id,
-                    cbz_path,
-                )
-                .await?;
+                service::cbz::create_cbz_with_doc_id(&self.db_pool, *id, cbz_path).await?;
             }
         }
         Ok(None)
