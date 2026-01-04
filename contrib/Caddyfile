@@ -1,0 +1,9 @@
+telegrab.example.com {
+	root * /var/www/telegrab
+	file_server
+	reverse_proxy /api/* unix//var/run/telegrab.socket
+	reverse_proxy /assets/* unix//var/run/telegrab.socket
+	tls {
+		key_type p384
+	}
+}

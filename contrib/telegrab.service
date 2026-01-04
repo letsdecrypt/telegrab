@@ -1,0 +1,18 @@
+[Unit]
+Description=Telegrab Service
+After=garnet.service postgresql.service telegrab.socket
+Requires=garnet.service postgresql.service telegrab.socket
+
+[Service]
+ExecStart=/usr/local/bin/telegrab
+WorkingDirectory=/var/lib/telegrab
+Environment=APP_ENVIRONMENT=production
+User=peter
+Group=home
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

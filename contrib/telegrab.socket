@@ -1,0 +1,11 @@
+[Unit]
+Description=Telegrab Web Socket
+PartOf=telegrab.service
+
+[Socket]
+Service=telegrab.service
+ListenStream=/run/telegrab.socket
+#NoDelay=true
+
+[Install]
+WantedBy=sockets.target
