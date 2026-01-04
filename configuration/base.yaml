@@ -1,5 +1,14 @@
 application:
-  port: 9000
+  listeners:
+    - type: "tcp"
+      address: "127.0.0.1:9000"
+    - type: "tcp"
+      address: "127.0.0.1:9001"
+    - type: "uds"
+      address: "/tmp/telegrab1.sock"
+    - type: "uds"
+      address: "/tmp/telegrab2.sock"
+  base_url: "http://127.0.0.1:9000"
 database:
   host: "localhost"
   port: 5432

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use time::serde::rfc3339;
 use time::OffsetDateTime;
+use time::serde::rfc3339;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -70,7 +70,7 @@ pub struct PageInfo {
     pub image: u32,
     #[serde(rename = "@Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub type_: Option<String>,
+    pub page_type: Option<String>,
 }
 
 impl PageInfo {
@@ -84,7 +84,7 @@ impl PageInfo {
                 };
                 Self {
                     image: idx,
-                    type_: Some(type_str),
+                    page_type: Some(type_str),
                 }
             })
             .collect()
@@ -93,7 +93,7 @@ impl PageInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct Pages{
+pub struct Pages {
     #[serde(rename = "Page")]
     pub page: Vec<PageInfo>,
 }

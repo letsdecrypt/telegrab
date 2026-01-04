@@ -46,6 +46,10 @@ pub enum Error {
     #[error(transparent)]
     AxumError(#[from] axum::Error),
 
+    // Listener Error
+    #[error("Listener Error {0}")]
+    ListenerError(String),
+
     // API
     #[error("not found")]
     NotFound,

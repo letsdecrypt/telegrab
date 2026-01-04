@@ -1,4 +1,5 @@
-use axum::debug_handler;
+use axum::response::IntoResponse;
 
-#[debug_handler]
-pub async fn health() {}
+pub async fn health() -> impl IntoResponse {
+    "OK"
+}

@@ -1,19 +1,19 @@
-use crate::shutdown_signal::shutdown_signal;
-use crate::state::AppState;
 use crate::{
     Result,
     configuration::Settings,
-    controller::{assets,cbz, doc, health_check, pic, task},
+    controller::{assets, cbz, doc, health_check, pic, task},
+    errors::Error::ListenerError,
+    listener,
     middleware::{TeleGrabRequestId, request_id_middleware},
+    shutdown_signal::shutdown_signal,
+    state::AppState,
 };
 use axum::{Router, http, routing::get};
 use axum_messages::MessagesManagerLayer;
 use axum_session::{SessionConfig, SessionLayer, SessionStore};
 use axum_session_redispool::SessionRedisPool;
-use listenfd::ListenFd;
 use redis_pool::RedisPool;
 use secrecy::ExposeSecret;
-use tokio::net::TcpListener;
 use tower_http::trace::TraceLayer;
 use tower_sessions::{MemoryStore, SessionManagerLayer};
 
@@ -31,37 +31,31 @@ pub fn app(state: AppState) -> Router {
 pub async fn run_app_until_stopped(state: AppState, configuration: Settings) -> Result<()> {
     let app = register_layer(app(state.clone()), &configuration).await;
 
-    let listener = init_listener(&configuration).await;
-    let server = axum::serve(listener, app);
-    let graceful = server.with_graceful_shutdown(shutdown_signal(state.clone()));
-    graceful.await?;
-    Ok(())
-}
+    let listener_handles =
+        listener::start_listeners(app, &configuration, state.shutdown.clone()).await?;
+    tracing::info!("Started {} listener(s)", listener_handles.len());
+    let shutdown_signal = shutdown_signal(state.clone());
 
-async fn init_listener(configuration: &Settings) -> TcpListener {
-    let mut listen_fd = ListenFd::from_env();
-    match listen_fd.take_tcp_listener(0) {
-        Ok(Some(listener)) => {
-            listener
-                .set_nonblocking(true)
-                .expect("Failed to set nonblocking");
-            let l = TcpListener::from_std(listener)
-                .expect("Failed to convert tcp listener to axum tcp listener");
-            let b = l
-                .local_addr()
-                .expect("tcp listener to be bound to a socket address.");
-            tracing::info!("Starting API server with ListenFd: {} ...", b);
-            l
-        }
-        Ok(None) | Err(_) => {
-            let listener = TcpListener::bind(configuration.application.address())
-                .await
-                .expect("Failed to bind to address");
-            let b = listener
-                .local_addr()
-                .expect("tcp listener to be bound to a socket address.");
-            tracing::info!("Starting API server with address: {} ...", b);
-            listener
+    tokio::select! {
+            _ = shutdown_signal => {
+                tracing::info!("All listeners stopped gracefully");
+                Ok(())
+            }
+        _ = async {
+            let mut results = Vec::new();
+            for handle in listener_handles {
+                let result = handle.await;
+                results.push(result);
+            }
+            for result in results {
+                if let Err(e) = result {
+                    tracing::error!("Listener error {:?}", e);
+                    return Err(ListenerError("One or more listeners failed".to_string()));
+                }
+            }
+            Ok(())
+        } => {
+            Err(ListenerError("One or more listeners failed".to_string()))
         }
     }
 }

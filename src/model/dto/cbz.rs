@@ -11,4 +11,3 @@ pub struct UpdateCbzReq {
 pub struct DeleteCbzReq {
     pub delete_file: Option<bool>,
 }
-

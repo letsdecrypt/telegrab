@@ -1,10 +1,11 @@
+use crate::Result;
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
 use crate::http_client::HttpClientManager;
 use crate::model::entity::doc::ComicInfo;
 use crate::model::entity::task::{QueueEvent, Task, TaskStatus, TaskType};
+use crate::service;
 use crate::state::{AppState, QueueState};
-use crate::{service, Result};
 use notify::event::{CreateKind, RemoveKind};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use sqlx::PgPool;

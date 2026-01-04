@@ -109,17 +109,41 @@ impl Default for WorkerSettings {
     }
 }
 
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ListenerType {
+    Tcp,
+    Uds,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ListenerConfig {
+    #[serde(rename = "type")]
+    pub listener_type: ListenerType,
+    pub address: String,
+}
+
+impl Default for ListenerConfig {
+    fn default() -> Self {
+        Self {
+            listener_type: ListenerType::Tcp,
+            address: "127.0.0.1:9000".into(),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApplicationSettings {
-    pub host: String,
-    #[serde(deserialize_with = "deserialize_number_from_string")]
-    pub port: u16,
+    pub listeners: Vec<ListenerConfig>,
     pub base_url: String,
 }
 
-impl ApplicationSettings {
-    pub fn address(&self) -> String {
-        format!("{}:{}", self.host, self.port)
+impl Default for ApplicationSettings {
+    fn default() -> Self {
+        Self {
+            listeners: vec![ListenerConfig::default()],
+            base_url: "http://localhost:9000".into(),
+        }
     }
 }
 #[derive(Deserialize, Debug, Clone)]

@@ -1,4 +1,4 @@
-use serde::{Deserialize};
+use serde::Deserialize;
 use time::OffsetDateTime;
 
 // 创建用户的请求体（API 入参）

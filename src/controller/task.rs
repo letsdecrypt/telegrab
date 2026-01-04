@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::stream::StreamExt;
-use futures_util::{stream, Stream};
+use futures_util::{Stream, stream};
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;

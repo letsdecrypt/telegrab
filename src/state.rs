@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{broadcast, Mutex, Notify, RwLock};
+use tokio::sync::{Mutex, Notify, RwLock, broadcast};
 
 #[derive(Debug, Clone)]
 pub struct QueueState {
@@ -101,7 +101,7 @@ impl QueueState {
             .values()
             .any(|t| matches!(t.task_type, TaskType::ScanDir))
     }
-    pub async fn is_parse_all_active(&self)->bool{
+    pub async fn is_parse_all_active(&self) -> bool {
         let active_tasks = self.active_tasks.read().await;
         active_tasks
             .values()

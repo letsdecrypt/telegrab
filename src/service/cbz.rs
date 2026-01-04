@@ -109,7 +109,11 @@ pub async fn update_cbz(
         .await
 }
 
-pub async fn update_cbz_doc_id_with_path(db_pool: &PgPool, doc_id: i32, path: String)  -> Result<u64, sqlx::Error>{
+pub async fn update_cbz_doc_id_with_path(
+    db_pool: &PgPool,
+    doc_id: i32,
+    path: String,
+) -> Result<u64, sqlx::Error> {
     let query = "UPDATE cbz SET doc_id = $1 WHERE path = $2";
     sqlx::query(query)
         .bind(doc_id)

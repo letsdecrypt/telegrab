@@ -2,7 +2,7 @@ use crate::model::dto::cbz::UpdateCbzReq;
 use crate::model::dto::pagination::PaginationQuery;
 use crate::model::entity::task::{EnqueueResponse, Task};
 use crate::state::AppState;
-use crate::{format, service, Result};
+use crate::{Result, format, service};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};

@@ -1,19 +1,19 @@
+use crate::Result;
 use crate::errors;
 use crate::format;
 use crate::model::dto;
+use crate::model::dto::AffectedRows;
 use crate::model::dto::doc::UpdateDocReq;
 use crate::model::dto::pagination::PaginationQuery;
-use crate::model::dto::AffectedRows;
+use crate::model::entity::task::{EnqueueResponse, Task};
 use crate::service;
 use crate::state::AppState;
-use crate::Result;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
-use crate::model::entity::task::{EnqueueResponse, Task};
 
 pub fn routers() -> Router<AppState> {
     Router::new()
@@ -64,7 +64,8 @@ async fn parse_all_doc_handler(State(state): State<AppState>) -> impl IntoRespon
             }),
         );
     }
-    let task =  Task::new_html_parse_all_task();state.queue_state.enqueue(task.clone()).await;
+    let task = Task::new_html_parse_all_task();
+    state.queue_state.enqueue(task.clone()).await;
     let queue_size = state.queue_state.size().await;
 
     let response = EnqueueResponse {

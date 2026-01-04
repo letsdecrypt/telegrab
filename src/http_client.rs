@@ -1,12 +1,12 @@
-use std::collections::HashSet;
 use crate::configuration::HttpClientSettings;
+use crate::model::entity::doc::TelegraphPost;
+use anyhow::Context;
 use reqwest::Client;
+use scraper::{Html, Selector};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use anyhow::Context;
-use scraper::{Html, Selector};
 use tokio::sync::RwLock;
-use crate::model::entity::doc::TelegraphPost;
 
 #[derive(Debug, Clone)]
 pub struct HttpClientManager {
@@ -17,7 +17,7 @@ pub struct HttpClientManager {
 impl HttpClientManager {
     pub fn new(config: Option<HttpClientSettings>) -> Self {
         let config = config.unwrap_or_default();
-        tracing::info!("Creating HTTP client with settings: {:?}", config);
+        tracing::debug!("Creating HTTP client with settings: {:?}", config);
         let client_builder = Client::builder()
             .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
             .timeout(Duration::from_secs(config.timeout_secs))
@@ -125,7 +125,7 @@ impl HttpClientManager {
             speed: speed as u64,
         })
     }
-    pub async fn parse_telegraph_post(&self, url:&str) -> crate::Result<TelegraphPost> {
+    pub async fn parse_telegraph_post(&self, url: &str) -> crate::Result<TelegraphPost> {
         // 获取网页内容
         let html_content = self.client.get(url).send().await?.text().await?;
 
