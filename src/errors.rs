@@ -28,17 +28,9 @@ pub enum Error {
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
     #[error(transparent)]
-    Base64Decode(#[from] base64::DecodeError),
-    #[error(transparent)]
     FromUtf8(#[from] string::FromUtf8Error),
     #[error(transparent)]
-    Argon2(#[from] argon2::Error),
-    #[error(transparent)]
-    Argon2PasswordHashError(#[from] argon2::password_hash::Error),
-    #[error(transparent)]
     JoinError(#[from] tokio::task::JoinError),
-    #[error(transparent)]
-    Tera(#[from] tera::Error),
     #[error(transparent)]
     InvalidHeaderValue(#[from] InvalidHeaderValue),
     #[error(transparent)]

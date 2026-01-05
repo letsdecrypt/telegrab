@@ -9,13 +9,7 @@ use crate::{
     state::AppState,
 };
 use axum::{Router, http, routing::get};
-use axum_messages::MessagesManagerLayer;
-use axum_session::{SessionConfig, SessionLayer, SessionStore};
-use axum_session_redispool::SessionRedisPool;
-use redis_pool::RedisPool;
-use secrecy::ExposeSecret;
 use tower_http::trace::TraceLayer;
-use tower_sessions::{MemoryStore, SessionManagerLayer};
 
 pub fn app(state: AppState) -> Router {
     Router::new()
@@ -59,21 +53,7 @@ pub async fn run_app_until_stopped(state: AppState, configuration: Settings) -> 
         }
     }
 }
-async fn init_session_store(redis_url: &str) -> SessionStore<SessionRedisPool> {
-    let client =
-        redis::Client::open(redis_url).expect("Failed when trying to open the redis connection");
-    let pool = RedisPool::from(client);
-    let session_config = SessionConfig::default();
-    SessionStore::<SessionRedisPool>::new(Some(pool.clone().into()), session_config)
-        .await
-        .expect("Failed to init session store")
-}
-
-pub async fn register_layer(app: Router, configuration: &Settings) -> Router {
-    let session_store = init_session_store(configuration.redis_uri.expose_secret()).await;
-    let memory_session_store = MemoryStore::default();
-    let session_layer = SessionManagerLayer::new(memory_session_store).with_secure(false);
-
+pub async fn register_layer(app: Router, _configuration: &Settings) -> Router {
     app.layer(
         TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
             let ext = request.extensions();
@@ -96,7 +76,4 @@ pub async fn register_layer(app: Router, configuration: &Settings) -> Router {
         }),
     )
     .layer(axum::middleware::from_fn(request_id_middleware))
-    .layer(MessagesManagerLayer)
-    .layer(SessionLayer::new(session_store))
-    .layer(session_layer)
 }
