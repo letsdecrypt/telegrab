@@ -1,4 +1,3 @@
-use crate::Result;
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
 use crate::http_client::HttpClientManager;
@@ -6,6 +5,7 @@ use crate::model::entity::doc::ComicInfo;
 use crate::model::entity::task::{QueueEvent, Task, TaskStatus, TaskType};
 use crate::service;
 use crate::state::{AppState, QueueState};
+use crate::Result;
 use notify::event::{CreateKind, RemoveKind};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use sqlx::PgPool;
@@ -196,29 +196,29 @@ impl TaskWorker {
     async fn process_pic_download_task(&self, id: &i32) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
         let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
-        let last_path_segment = parsed_url.path_segments().unwrap().last().unwrap();
-        let save_dir = format!("{}/{}", self.pic_dir, last_path_segment);
+        let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
+        let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
         ensure_dir_exists(&save_dir).await?;
         let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
         let total = pics.len();
         let mut succeeded = 0;
         for (i, pic) in pics.iter().enumerate() {
             let pic_url = pic.url.clone();
-            let ext = pic_url.split('.').last().unwrap_or("jpg");
+            let ext = pic_url.split('.').next_back().unwrap_or("jpg");
             let filename = format_page_filename(i, total, ext);
-            let filepath = format!("{}/{}", save_dir, filename);
+            let filepath = save_dir.join(filename);
             if Path::new(&filepath).exists() {
                 tracing::info!(
                     "Worker {} pic {} already exists, skip download",
                     self.worker_id,
-                    filepath
+                    filepath.display()
                 );
                 succeeded += 1;
                 continue;
             }
             if let Err(err) = self
                 .http_client
-                .download_file(&pic_url, filepath.as_str())
+                .download_file(&pic_url, &filepath)
                 .await
             {
                 tracing::warn!(
@@ -234,7 +234,12 @@ impl TaskWorker {
         if succeeded == total {
             service::doc::update_doc_status(&self.db_pool, *id, 2).await?;
         }
-        Ok(Some(format!("{},{}/{}", save_dir, succeeded, total)))
+        Ok(Some(format!(
+            "{},{}/{}",
+            save_dir.to_str().unwrap(),
+            succeeded,
+            total
+        )))
     }
     async fn process_cbz_archive_task(&self, id: &i32) -> Result<Option<String>> {
         let mut doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
@@ -245,25 +250,26 @@ impl TaskWorker {
         quick_xml::se::to_writer(&mut xml, &doc_xml).expect("Failed to serialize ComicInfo Xml");
         let xml_with_decl = format!(r#"<?xml version="1.0" encoding="utf-8"?>{}"#, xml);
         let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
-        let last_path_segment = parsed_url.path_segments().unwrap().last().unwrap();
+        let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
         ensure_dir_exists(&self.cbz_dir).await?;
-        let pic_dir = format!("{}/{}", self.pic_dir, last_path_segment);
-        let files_result = get_files_in_dir(pic_dir.as_str());
+        let pic_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
+        let files_result = get_files_in_dir(&pic_dir);
         if let Err(err) = files_result {
             tracing::warn!(
                 "Worker {} get files in dir {} failed: {}",
                 self.worker_id,
-                pic_dir,
+                pic_dir.display(),
                 err
             );
             return Ok(None);
         }
         let cbz_filename = match (doc.writer, doc.title, doc.page_title) {
             (Some(writer), Some(title), _) => format!("[{}]{}", writer, title),
-            (_, None, Some(page_title)) => format!("{}", page_title),
+            (_, None, Some(page_title)) => page_title.to_string(),
             _ => last_path_segment.to_string(),
         };
-        let zip_file_path = format!("{}/{}.cbz", self.cbz_dir, cbz_filename);
+        let cbz_full_filename = format!("{}.cbz", cbz_filename);
+        let zip_file_path = PathBuf::from(&self.cbz_dir).join(cbz_full_filename.clone());
         let zip_file = std::fs::File::create(&zip_file_path)?;
         let mut zip_writer = zip::ZipWriter::new(zip_file);
         let r = zip_writer.start_file("ComicInfo.xml", SimpleFileOptions::default());
@@ -291,7 +297,7 @@ impl TaskWorker {
         let simple_options = SimpleFileOptions::default();
         for file in files {
             let filename = file.file_name().unwrap().to_string_lossy().to_string();
-            let r = zip_writer.start_file(filename.clone(), simple_options);
+            let r = zip_writer.start_file(&filename, simple_options);
             if let Err(err) = r {
                 tracing::warn!(
                     "Worker {} add file {} to zip failed: {}",
@@ -319,7 +325,7 @@ impl TaskWorker {
             return Ok(None);
         } else {
             service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
-            let cbz_path = format!("{}.cbz", cbz_filename);
+            let cbz_path = cbz_full_filename.clone();
             let cbz_option = service::cbz::get_cbz_by_path(&self.db_pool, cbz_path.clone()).await?;
             if let Some(cbz) = cbz_option {
                 service::cbz::update_cbz(&self.db_pool, cbz.id, Some(*id)).await?;
@@ -330,21 +336,21 @@ impl TaskWorker {
         Ok(None)
     }
     async fn process_scan_dir_task(&self) -> Result<Option<String>> {
-        let dir = PathBuf::from(self.cbz_dir.as_str());
+        let dir = Path::new(&self.cbz_dir);
         let mut files = HashSet::new();
-        scan_dir_recursive(&dir, &mut files).await;
+        scan_dir_recursive(dir, &mut files).await;
         for file in files {
             let filename = file.file_name().unwrap().to_string_lossy().to_string();
             let cbz_in_db = service::cbz::get_cbz_by_path(&self.db_pool, filename.clone()).await?;
             if cbz_in_db.is_none() {
-                service::cbz::create_cbz(&self.db_pool, filename.clone()).await?;
+                service::cbz::create_cbz(&self.db_pool, filename).await?;
             }
         }
         Ok(None)
     }
     async fn process_remove_cbz_task(&self, cbz_id: &i32) -> Result<Option<String>> {
         let cbz = service::cbz::get_cbz_by_id(&self.db_pool, *cbz_id).await?;
-        let cbz_path = format!("{}/{}", self.cbz_dir, cbz.path);
+        let cbz_path = PathBuf::from(&self.cbz_dir).join(cbz.path);
         if let Err(err) = std::fs::remove_file(cbz_path) {
             tracing::warn!("Remove cbz {} failed: {}", cbz_id, err);
         }
@@ -485,8 +491,8 @@ pub async fn stop_fs_monitor(state: AppState) {
     }
 }
 
-async fn ensure_dir_exists(p: &str) -> Result<()> {
-    let pp = Path::new(p);
+async fn ensure_dir_exists<P: AsRef<Path>>(p: P) -> Result<()> {
+    let pp = p.as_ref();
     if !pp.exists() {
         tokio::fs::create_dir_all(pp).await?;
     }
@@ -498,13 +504,13 @@ fn format_page_filename(page_idx: usize, total_pages: usize, ext: &str) -> Strin
     format!("{:0width$}.{}", page_idx, ext, width = num_digits)
 }
 
-fn get_files_in_dir(dir_path: &str) -> Result<Vec<PathBuf>, std::io::Error> {
-    let dir = Path::new(dir_path);
+fn get_files_in_dir<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>, std::io::Error> {
+    let dir = dir_path.as_ref();
 
     if !dir.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("dir not exists: {}", dir_path),
+            format!("dir not exists: {}", dir.display()),
         ));
     }
 
@@ -522,7 +528,7 @@ fn get_files_in_dir(dir_path: &str) -> Result<Vec<PathBuf>, std::io::Error> {
     Ok(files)
 }
 
-async fn scan_dir_recursive(dir_path: &PathBuf, files: &mut HashSet<PathBuf>) {
+async fn scan_dir_recursive(dir_path: &Path, files: &mut HashSet<PathBuf>) {
     if !dir_path.is_dir() {
         tracing::error!("dir not exists: {:?}", dir_path);
     }

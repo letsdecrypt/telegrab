@@ -4,6 +4,7 @@ use anyhow::Context;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -73,12 +74,13 @@ impl HttpClientManager {
         );
         Ok(())
     }
-    pub async fn download_file(
+    pub async fn download_file<P:AsRef<Path>>(
         &self,
         url: &str,
-        save_path: &str,
+        save_path: P,
     ) -> Result<DownloadResult, DownloadError> {
-        tracing::info!("Downloading file: {} -> {}", url, save_path);
+        let save_path_ref = save_path.as_ref();
+        tracing::info!("Downloading file: {} -> {}", url, save_path_ref.display());
         let start_time = Instant::now();
 
         let response = self
@@ -100,7 +102,7 @@ impl HttpClientManager {
             .bytes()
             .await
             .map_err(|e| DownloadError::IOError(format!("Failed to read response bytes: {}", e)))?;
-        tokio::fs::write(save_path, &bytes)
+        tokio::fs::write(save_path_ref, &bytes)
             .await
             .map_err(|e| DownloadError::IOError(format!("Failed to write file: {}", e)))?;
 
@@ -120,7 +122,7 @@ impl HttpClientManager {
         Ok(DownloadResult {
             url: url.to_string(),
             size: content_length,
-            save_path: save_path.to_string(),
+            save_path: save_path_ref.to_string_lossy().to_string(),
             duration,
             speed: speed as u64,
         })

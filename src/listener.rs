@@ -3,12 +3,15 @@ use crate::errors::Error::ListenerError;
 use crate::graceful::GracefulShutdown;
 use crate::Result;
 use axum::Router;
-use listenfd::ListenFd;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::net::{TcpListener, UnixListener};
+use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use tokio::net::UnixListener;
 
 pub type ListenerHandle = JoinHandle<Result<()>>;
 
@@ -18,14 +21,21 @@ pub async fn start_listeners(
     shutdown: Arc<GracefulShutdown>,
 ) -> Result<Vec<ListenerHandle>> {
     let mut handles = Vec::new();
-    let mut listen_fd = ListenFd::from_env();
-    // use fd listeners, usually on dev
-    if listen_fd.len() > 0 {
-        let fd_handles = start_listen_on_fd(app.clone(), &mut listen_fd, shutdown.clone()).await?;
-        if !fd_handles.is_empty() {
-            return Ok(fd_handles);
+
+    // use fd listeners, usually on dev (Unix Only)
+    #[cfg(unix)]
+    {
+        use listenfd::ListenFd;
+        let mut listen_fd = ListenFd::from_env();
+        if listen_fd.len() > 0 {
+            let fd_handles =
+                start_listen_on_fd(app.clone(), &mut listen_fd, shutdown.clone()).await?;
+            if !fd_handles.is_empty() {
+                return Ok(fd_handles);
+            }
         }
     }
+
     // use configuration listeners, usually on production
     for listener in configuration.application.listeners.iter() {
         let handle = start_listener(app.clone(), listener, shutdown.clone()).await?;
@@ -41,7 +51,16 @@ pub async fn start_listener(
 ) -> Result<ListenerHandle> {
     match config.listener_type {
         ListenerType::Tcp => start_tcp_listener(app, config, shutdown).await,
-        ListenerType::Uds => start_uds_listener(app, config, shutdown).await,
+        ListenerType::Uds => {
+            #[cfg(unix)]
+            {
+                start_uds_listener(app, config, shutdown).await
+            }
+            #[cfg(windows)]
+            {
+                Err(ListenerError("UDS is not supported on Windows".to_string()))
+            }
+        }
     }
 }
 
@@ -101,6 +120,7 @@ pub async fn start_tcp_listener(
 
     Ok(join_handle)
 }
+#[cfg(unix)]
 pub async fn start_uds_listener(
     app: Router,
     config: &ListenerConfig,
@@ -188,9 +208,10 @@ pub async fn start_uds_listener(
     Ok(join_handle)
 }
 
+#[cfg(unix)]
 async fn start_listen_on_fd(
     app: Router,
-    fd: &mut ListenFd,
+    fd: &mut listenfd::ListenFd,
     shutdown: Arc<GracefulShutdown>,
 ) -> Result<Vec<ListenerHandle>> {
     let mut handles = Vec::new();

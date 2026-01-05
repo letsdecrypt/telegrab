@@ -167,9 +167,9 @@ impl Task {
     }
 }
 
-impl Into<String> for TaskType {
-    fn into(self) -> String {
-        match self {
+impl From<TaskType> for String {
+    fn from(val: TaskType) -> Self {
+        match val {
             TaskType::HtmlParse { id } => format!("HtmlParse: {}", id),
             TaskType::PicDownload { id } => format!("PicDownload: {}", id),
             TaskType::CbzArchive { id } => format!("CbzArchive: {}", id),
