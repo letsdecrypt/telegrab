@@ -19,7 +19,7 @@ use tower_sessions::{MemoryStore, SessionManagerLayer};
 
 pub fn app(state: AppState) -> Router {
     Router::new()
-        .nest("/assets", assets::routers(&state))
+        .nest("/resource", assets::routers(&state))
         .route("/api/health", get(health_check::health))
         .nest("/api/doc", doc::routers())
         .nest("/api/pic", pic::routers())
