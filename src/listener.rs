@@ -1,9 +1,10 @@
-use crate::Result;
 use crate::configuration::{ListenerConfig, ListenerType, Settings};
 use crate::errors::Error::ListenerError;
 use crate::graceful::GracefulShutdown;
+use crate::Result;
 use axum::Router;
 use listenfd::ListenFd;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UnixListener};
@@ -129,6 +130,27 @@ pub async fn start_uds_listener(
             &address, e
         ))
     })?;
+    {
+        let mut perms = std::fs::metadata(&socket_path)?.permissions();
+        let desired_mode = 0o666;
+        let current_mode = perms.mode();
+        if current_mode != desired_mode {
+            tracing::warn!(
+                "[Listener] Permissions for socket file {} are not set correctly, {:o}. Setting them to {:o}.",
+                &address,
+                current_mode,
+                desired_mode
+            );
+            perms.set_mode(desired_mode);
+            if let Err(e) = std::fs::set_permissions(&socket_path, perms) {
+                tracing::warn!(
+                    "Failed to set permissions for socket file {}: {}",
+                    &address,
+                    e
+                )
+            }
+        }
+    };
     tracing::info!("[Listener] Starting UDS server on {}...", &address);
     let mut shutdown_rx = shutdown.get_shutdown_rx().await;
     let join_handle = tokio::spawn(async move {
