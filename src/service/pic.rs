@@ -4,11 +4,12 @@ use crate::model::dto::pagination::{PaginationQuery, PaginationResponse};
 use crate::model::dto::pic::MutatePicReq;
 use crate::model::entity::pic::Pic;
 use convert_case::{Case, Casing};
-use sqlx::PgPool;
+use sqlx::{query, query_as};
+use sqlx_postgres::PgPool;
 
 pub async fn create_pic(pool: &PgPool, params: MutatePicReq) -> Result<Pic, sqlx::Error> {
     let sql = "INSERT INTO pic (url, doc_id, seq) VALUES ($1, $2, $3) RETURNING *";
-    sqlx::query_as::<_, Pic>(sql)
+    query_as(sql)
         .bind(params.url)
         .bind(params.doc_id)
         .bind(params.seq)
@@ -18,7 +19,7 @@ pub async fn create_pic(pool: &PgPool, params: MutatePicReq) -> Result<Pic, sqlx
 
 pub async fn get_pic_by_id(pool: &PgPool, id: i32) -> Result<Pic, sqlx::Error> {
     let sql = "SELECT * FROM pic WHERE id = $1";
-    sqlx::query_as::<_, Pic>(sql).bind(id).fetch_one(pool).await
+    query_as(sql).bind(id).fetch_one(pool).await
 }
 
 pub async fn get_pics(
@@ -58,13 +59,12 @@ pub async fn get_pics(
     let pagination_clause = format!(" LIMIT {} OFFSET {}", query.limit(), query.offset());
 
     // 执行查询获取总数
-    let total: (i64,) =
-        sqlx::query_as::<_, (i64,)>(&format!("SELECT COUNT(*) FROM pic{}", filter_clause))
-            .fetch_one(pool)
-            .await?;
+    let (total,): (i64,) = query_as(&format!("SELECT COUNT(*) FROM pic{}", filter_clause))
+        .fetch_one(pool)
+        .await?;
 
     // 执行查询获取数据
-    let pics = sqlx::query_as::<_, Pic>(&format!(
+    let pics = query_as(&format!(
         "SELECT * FROM pic{}{}{}",
         filter_clause, sort_clause, pagination_clause
     ))
@@ -74,7 +74,7 @@ pub async fn get_pics(
     // 构建并返回分页响应
     Ok(PaginationResponse {
         data: pics,
-        total: total.0 as u64,
+        total: total as u64,
     })
 }
 
@@ -84,7 +84,7 @@ pub async fn update_pic_by_id(
     params: MutatePicReq,
 ) -> Result<Pic, sqlx::Error> {
     let sql = "UPDATE pic SET url = $1, doc_id = $2, seq = $3 WHERE id = $4 RETURNING *";
-    sqlx::query_as::<_, Pic>(sql)
+    query_as(sql)
         .bind(params.url)
         .bind(params.doc_id)
         .bind(params.seq)
@@ -94,7 +94,7 @@ pub async fn update_pic_by_id(
 }
 pub async fn delete_pic_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
     let sql = "DELETE FROM pic WHERE id = $1";
-    sqlx::query(sql)
+    query(sql)
         .bind(id)
         .execute(pool)
         .await
@@ -103,8 +103,5 @@ pub async fn delete_pic_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error
 
 pub async fn get_pics_by_doc_id(pool: &PgPool, doc_id: i32) -> Result<Vec<Pic>, sqlx::Error> {
     let sql = "SELECT * FROM pic WHERE doc_id = $1 ORDER BY seq";
-    sqlx::query_as::<_, Pic>(sql)
-        .bind(doc_id)
-        .fetch_all(pool)
-        .await
+    query_as(sql).bind(doc_id).fetch_all(pool).await
 }

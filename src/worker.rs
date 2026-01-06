@@ -8,7 +8,7 @@ use crate::state::{AppState, QueueState};
 use crate::Result;
 use notify::event::{CreateKind, RemoveKind};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use sqlx::PgPool;
+use sqlx_postgres::PgPool;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -216,11 +216,7 @@ impl TaskWorker {
                 succeeded += 1;
                 continue;
             }
-            if let Err(err) = self
-                .http_client
-                .download_file(&pic_url, &filepath)
-                .await
-            {
+            if let Err(err) = self.http_client.download_file(&pic_url, &filepath).await {
                 tracing::warn!(
                     "Worker {} download pic {} failed: {}",
                     self.worker_id,

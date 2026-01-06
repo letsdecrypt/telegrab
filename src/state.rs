@@ -2,12 +2,12 @@ use crate::configuration::Settings;
 use crate::graceful::GracefulShutdown;
 use crate::http_client::HttpClientManager;
 use crate::model::entity::task::{ActiveTaskInfo, QueueEvent, Task, TaskStatus, TaskType};
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx_postgres::{PgPool, PgPoolOptions};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, Notify, RwLock, broadcast};
+use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct QueueState {
@@ -226,10 +226,10 @@ impl AppState {
 
         {
             //db migration
-            sqlx::migrate!()
-                .run(&*db_pool)
-                .await
-                .expect("Could not run database migrations.");
+            /*sqlx::migrate!()
+            .run(&*db_pool)
+            .await
+            .expect("Could not run database migrations.");*/
         }
 
         Self {

@@ -3,19 +3,17 @@ use crate::model::dto::pagination::PaginationResponse;
 use crate::model::dto::pagination::{PaginationQuery, RefineSortOrder};
 use crate::model::entity::doc::{Doc, ShimDoc, TelegraphPost};
 use convert_case::{Case, Casing};
-use sqlx::PgPool;
+use sqlx::{query, query_as};
+use sqlx_postgres::PgPool;
 use time::OffsetDateTime;
 
 pub async fn create_doc(pool: &PgPool, req: CreateDocReq) -> Result<Doc, sqlx::Error> {
     let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *, (SELECT id FROM cbz WHERE doc_id = doc.id) AS cbz_id";
-    sqlx::query_as::<_, Doc>(sql)
-        .bind(req.url)
-        .fetch_one(pool)
-        .await
+    query_as(sql).bind(req.url).fetch_one(pool).await
 }
 pub async fn get_doc_by_id(pool: &PgPool, id: i32) -> Result<Doc, sqlx::Error> {
     let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = $1";
-    sqlx::query_as::<_, Doc>(sql).bind(id).fetch_one(pool).await
+    query_as(sql).bind(id).fetch_one(pool).await
 }
 
 pub async fn get_docs(
@@ -48,12 +46,10 @@ pub async fn get_docs(
     let pagination_clause = format!(" LIMIT {} OFFSET {}", query.limit(), query.offset());
 
     // 执行查询获取总数
-    let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM doc")
-        .fetch_one(pool)
-        .await?;
+    let (total,): (i64,) = query_as("SELECT COUNT(*) FROM doc").fetch_one(pool).await?;
 
     // 执行查询获取数据
-    let docs = sqlx::query_as::<_, Doc>(&format!(
+    let docs = query_as(&format!(
         "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id{}{}",
         sort_clause, pagination_clause
     ))
@@ -63,22 +59,22 @@ pub async fn get_docs(
     // 构建并返回分页响应
     Ok(PaginationResponse {
         data: docs,
-        total: total.0 as u64,
+        total: total as u64,
     })
 }
 
 pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<ShimDoc>, sqlx::Error> {
     let sql = "SELECT doc.id, cbz.id as cbz_id, url, page_title, title FROM doc left join cbz on doc.id = cbz.doc_id WHERE status > 0 ORDER BY doc.id";
-    sqlx::query_as::<_, ShimDoc>(sql).fetch_all(pool).await
+    query_as::<_, ShimDoc>(sql).fetch_all(pool).await
 }
 pub async fn get_unparsed_docs(pool: &PgPool) -> Result<Vec<Doc>, sqlx::Error> {
     let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE status = 0";
-    sqlx::query_as::<_, Doc>(sql).fetch_all(pool).await
+    query_as(sql).fetch_all(pool).await
 }
 
 pub async fn delete_doc_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
     let sql = "DELETE FROM doc WHERE id = $1";
-    sqlx::query(sql)
+    query(sql)
         .bind(id)
         .execute(pool)
         .await
@@ -129,7 +125,7 @@ pub async fn update_doc(pool: &PgPool, id: i32, req: UpdateDocReq) -> Result<Doc
     RETURNING *, (SELECT id FROM cbz WHERE doc_id = doc.id) AS cbz_id
     "#;
 
-    sqlx::query_as::<_, Doc>(sql)
+    query_as(sql)
         .bind(req.page_title)
         .bind(req.page_date)
         .bind(req.title)
@@ -186,7 +182,7 @@ pub async fn update_parsed_doc(
         .ok()
     });
     let doc_sql = r#"UPDATE doc SET page_title = $1, page_date = $2, page_count = $3, web = $4, status = 1 WHERE id = $5 RETURNING *, (SELECT id FROM cbz WHERE doc_id = $5) AS cbz_id"#;
-    let doc = sqlx::query_as::<_, Doc>(doc_sql)
+    let doc = query_as(doc_sql)
         .bind(p.title)
         .bind(parsed_date)
         .bind(p.image_urls.len().to_string())
@@ -198,13 +194,13 @@ pub async fn update_parsed_doc(
     let pic_sql = r#"INSERT INTO pic (doc_id, url, seq) VALUES ($1, $2, $3)"#;
     let check_sql = r#"SELECT COUNT(*) FROM pic WHERE doc_id = $1 and url = $2"#;
     for (i, url) in p.image_urls.iter().enumerate() {
-        let count: (i64,) = sqlx::query_as(check_sql)
+        let (count,): (i64,) = query_as(check_sql)
             .bind(id)
             .bind(url)
             .fetch_one(pool)
             .await?;
-        if count.0 == 0 {
-            sqlx::query(pic_sql)
+        if count == 0 {
+            query(pic_sql)
                 .bind(id)
                 .bind(url)
                 .bind(i as i32)
@@ -218,7 +214,7 @@ pub async fn update_parsed_doc(
 
 pub async fn update_doc_status(pool: &PgPool, id: i32, status: i32) -> Result<u64, sqlx::Error> {
     let sql = "UPDATE doc SET status = $1 WHERE id = $2";
-    sqlx::query(sql)
+    query(sql)
         .bind(status)
         .bind(id)
         .execute(pool)
