@@ -74,7 +74,7 @@ impl HttpClientManager {
         );
         Ok(())
     }
-    pub async fn download_file<P:AsRef<Path>>(
+    pub async fn download_file<P: AsRef<Path>>(
         &self,
         url: &str,
         save_path: P,
@@ -86,6 +86,10 @@ impl HttpClientManager {
         let response = self
             .client
             .get(url)
+            .header(
+                "Referer",
+                "https://telegra.ph/",
+            )
             .send()
             .await
             .map_err(|e| DownloadError::NetworkError(format!("Request failed: {}", e)))?;
