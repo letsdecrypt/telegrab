@@ -1,9 +1,11 @@
 use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
-use crate::model::dto::pagination::PaginationResponse;
+use crate::model::dto::pagination::{CursorBasedPaginationResponse, PaginationResponse};
 use crate::model::dto::pagination::{PaginationQuery, RefineSortOrder};
 use crate::model::entity::doc::{Doc, ShimDoc, TelegraphPost};
+use crate::model::{Direction, PaginationArgs};
+use crate::service::helper::build_cursor_pagination;
 use convert_case::{Case, Casing};
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, query_scalar};
 use sqlx_postgres::PgPool;
 use time::OffsetDateTime;
 
@@ -14,6 +16,14 @@ pub async fn create_doc(pool: &PgPool, req: CreateDocReq) -> Result<Doc, sqlx::E
 pub async fn get_doc_by_id(pool: &PgPool, id: i32) -> Result<Doc, sqlx::Error> {
     let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = $1";
     query_as(sql).bind(id).fetch_one(pool).await
+}
+
+pub async fn get_docs_by_ids(
+    pool: &PgPool,
+    ids: &[i32],
+) -> Result<Vec<Doc>, sqlx::Error> {
+    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = ANY($1)";
+    query_as(sql).bind(ids).fetch_all(pool).await
 }
 
 pub async fn get_docs(
@@ -185,7 +195,7 @@ pub async fn update_parsed_doc(
     let doc = query_as(doc_sql)
         .bind(p.title)
         .bind(parsed_date)
-        .bind(p.image_urls.len().to_string())
+        .bind(p.image_urls.len() as i16)
         .bind(p.url.clone())
         .bind(id)
         .fetch_one(&mut *tx)
@@ -220,4 +230,52 @@ pub async fn update_doc_status(pool: &PgPool, id: i32, status: i32) -> Result<u6
         .execute(pool)
         .await
         .map(|r| r.rows_affected())
+}
+
+pub async fn get_cursor_based_pagination_docs(
+    pool: &PgPool,
+    pagination_args: PaginationArgs,
+    title:Option<String>,
+) -> Result<CursorBasedPaginationResponse<Doc>, sqlx::Error> {
+    let total: i64 = query_scalar("SELECT COUNT(*) FROM doc")
+        .fetch_one(pool)
+        .await?;
+    let PaginationArgs {
+        limit,
+        cursor,
+        direction,
+    } = pagination_args;
+
+    let main_sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id";
+    let order_by_clause = match direction {
+        Direction::Forward => "ORDER BY doc.id",
+        Direction::Backward => "ORDER BY doc.id DESC",
+    };
+
+    let docs = if let Some(cursor) = cursor {
+        //todo title模糊查询
+        let where_clause = format!(
+            "WHERE doc.id {} $1",
+            if direction == Direction::Forward {
+                " > "
+            } else {
+                " < "
+            }
+        );
+        let sql = format!("{} {} {} LIMIT $2", main_sql, where_clause, order_by_clause);
+        query_as(&sql)
+            .bind(cursor)
+            .bind(limit as i64 + 1) // 多查一条用来判断是否有下一页
+            .fetch_all(pool)
+            .await?
+    } else {
+        let sql = format!("{} {} LIMIT $1", main_sql, order_by_clause);
+        query_as(&sql)
+            .bind(limit as i64 + 1) // 多查一条用来判断是否有下一页
+            .fetch_all(pool)
+            .await?
+    };
+
+    let paged = build_cursor_pagination(docs, total as u64, limit, direction, cursor.is_some());
+    Ok(paged)
 }

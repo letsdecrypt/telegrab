@@ -70,6 +70,13 @@ pub struct PaginationResponse<T> {
     pub data: Vec<T>, // 当前页数据
     pub total: u64,   // 总条数
 }
+#[derive(Debug)]
+pub struct CursorBasedPaginationResponse<T>{
+    pub data: Vec<T>,
+    pub total: u64,
+    pub has_next:bool,
+    pub has_prev:bool,
+}
 
 // -------------- 辅助函数 --------------
 // 默认页码：1

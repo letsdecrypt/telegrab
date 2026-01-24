@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use time::OffsetDateTime;
 use time::serde::rfc3339;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -16,3 +16,4 @@ pub struct Pic {
     #[serde(with = "rfc3339")]
     pub updated_at: OffsetDateTime,
 }
+

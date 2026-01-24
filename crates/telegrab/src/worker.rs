@@ -1,7 +1,8 @@
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
 use crate::http_client::HttpClientManager;
-use crate::model::entity::doc::ComicInfo;
+use crate::model::entity::doc::{ComicInfo, Doc};
+use crate::model::entity::pic::Pic;
 use crate::model::entity::task::{QueueEvent, Task, TaskStatus, TaskType};
 use crate::service;
 use crate::state::{AppState, QueueState};
@@ -18,7 +19,7 @@ use zip::write::SimpleFileOptions;
 
 #[derive(Debug, Clone)]
 pub struct TaskWorker {
-    queue_state: QueueState,
+    queue_state: Arc<QueueState>,
     shutdown: Arc<GracefulShutdown>,
     http_client: Arc<HttpClientManager>,
     db_pool: Arc<PgPool>,
@@ -114,8 +115,11 @@ impl TaskWorker {
                     TaskType::HtmlParse { id: doc_id } => {
                         self.process_html_parse_task(doc_id).await
                     }
-                    TaskType::PicDownload { id: doc_id } => {
-                        self.process_pic_download_task(doc_id).await
+                    TaskType::DocDownload { id: doc_id } => {
+                        self.process_doc_download_task(doc_id, &task.id).await
+                    }
+                    TaskType::PicDownload { id: pic_id } => {
+                        self.process_pic_download_task(pic_id).await
                     }
                     TaskType::CbzArchive { id: doc_id } => {
                         self.process_cbz_archive_task(doc_id).await
@@ -126,7 +130,7 @@ impl TaskWorker {
                     }
                     TaskType::FSCbzAdded { path } => self.process_fs_cbz_added_task(path).await,
                     TaskType::FSCbzRemoved { path } => self.process_fs_cbz_removed_task(path).await,
-                    TaskType::HtmlParseAll => self.process_html_parse_all_task().await,
+                    TaskType::HtmlParseAll => self.process_html_parse_all_task(&task.id).await,
                 };
                 self.queue_state.unregister_active_task(&task.id).await;
                 match result {
@@ -172,28 +176,88 @@ impl TaskWorker {
             None => Ok(Some(false)),
         }
     }
+    async fn inner_process_html_parse(&self, doc: &Doc) -> Result<Option<String>> {
+        let telegraph_post = self.http_client.parse_telegraph_post(&doc.url).await?;
+        let doc = service::doc::update_parsed_doc(&self.db_pool, doc.id, telegraph_post).await?;
+        let cover_pic = service::pic::get_cover_pic_by_doc_id(&self.db_pool, doc.id).await?;
+        let cover_task = Task::new_pic_download_task(cover_pic.id);
+        self.queue_state.enqueue(cover_task).await;
+        Ok(doc.page_title)
+    }
     async fn process_html_parse_task(&self, id: &i32) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
         if doc.status == 1 && doc.page_title.is_some() {
             return Ok(doc.page_title);
         }
-        let telegraph_post = self.http_client.parse_telegraph_post(&doc.url).await?;
-        let doc = service::doc::update_parsed_doc(&self.db_pool, *id, telegraph_post).await?;
-        Ok(doc.page_title)
+        self.inner_process_html_parse(&doc).await
     }
-    async fn process_html_parse_all_task(&self) -> Result<Option<String>> {
+    async fn process_html_parse_all_task(&self,task_id:&str) -> Result<Option<String>> {
         let docs = service::doc::get_unparsed_docs(&self.db_pool).await?;
+        let total = docs.len();
+        let mut succeeded = 0;
+        let mut progress = 0f64;
         for doc in docs {
-            if doc.status == 1 && doc.page_title.is_some() {
-                continue;
+            if doc.status==0
+                && let Err(_) = self.inner_process_html_parse(&doc).await {
+                    tracing::warn!("Worker {} process html parse task for doc {} failed", self.worker_id, doc.id);
+                }
+            succeeded += 1;
+            let new_progress = succeeded as f64 / total as f64;
+            if new_progress - progress > 1.0 {
+                self.queue_state
+                    .update_task_progress(task_id, new_progress)
+                    .await;
+                progress = new_progress;
             }
-            let telegraph_post = self.http_client.parse_telegraph_post(&doc.url).await?;
-            let _doc =
-                service::doc::update_parsed_doc(&self.db_pool, doc.id, telegraph_post).await?;
         }
+        progress = 1.0;
+        self.queue_state.update_task_progress(task_id, progress).await;
         Ok(None)
     }
     async fn process_pic_download_task(&self, id: &i32) -> Result<Option<String>> {
+        let pic = service::pic::get_pic_by_id(&self.db_pool, *id).await?;
+        let doc = service::doc::get_doc_by_id(&self.db_pool, pic.doc_id).await?;
+        let total: usize = doc.page_count.map(|n| n as usize).unwrap_or(1);
+        let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
+        let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
+        let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
+        ensure_dir_exists(&save_dir).await?;
+        self.inner_process_pic_download(&pic, total, &save_dir)
+            .await
+    }
+    async fn inner_process_pic_download(
+        &self,
+        pic: &Pic,
+        total: usize,
+        save_dir: &Path,
+    ) -> Result<Option<String>> {
+        let pic_url = pic.url.clone();
+        let seq = pic.seq;
+        let ext = pic_url.split('.').next_back().unwrap_or("jpg");
+        let filename = format_page_filename(seq as usize, total, ext);
+        let filepath = save_dir.join(filename);
+        if Path::new(&filepath).exists() {
+            tracing::info!(
+                "Worker {} pic {} already exists, skip download",
+                self.worker_id,
+                pic.id
+            );
+            return Ok(Some(format!("Pic {} already exists", pic.id)));
+        }
+        if let Err(err) = self.http_client.download_file(&pic_url, &filepath).await {
+            tracing::warn!(
+                "Worker {} download pic {} failed: {}",
+                self.worker_id,
+                pic_url,
+                err
+            );
+            Ok(None)
+        } else {
+            service::pic::update_pic_status_by_id(&self.db_pool, pic.id, 1).await?;
+            Ok(Some(format!("Download Pic {} Successful", pic.id)))
+        }
+    }
+    async fn process_doc_download_task(&self, id: &i32, task_id: &str) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
         let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
         let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
@@ -202,33 +266,25 @@ impl TaskWorker {
         let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
         let total = pics.len();
         let mut succeeded = 0;
-        for (i, pic) in pics.iter().enumerate() {
-            let pic_url = pic.url.clone();
-            let ext = pic_url.split('.').next_back().unwrap_or("jpg");
-            let filename = format_page_filename(i, total, ext);
-            let filepath = save_dir.join(filename);
-            if Path::new(&filepath).exists() {
-                tracing::info!(
-                    "Worker {} pic {} already exists, skip download",
-                    self.worker_id,
-                    filepath.display()
-                );
+        let mut progress = 0f64;
+        for pic in pics.iter() {
+            if let Ok(Some(_)) = self.inner_process_pic_download(pic, total, &save_dir).await {
                 succeeded += 1;
-                continue;
-            }
-            if let Err(err) = self.http_client.download_file(&pic_url, &filepath).await {
-                tracing::warn!(
-                    "Worker {} download pic {} failed: {}",
-                    self.worker_id,
-                    pic_url,
-                    err
-                );
-            } else {
-                succeeded += 1;
+                let new_progress = succeeded as f64 / total as f64;
+                if new_progress - progress > 1.0 {
+                    progress = new_progress;
+                    self.queue_state
+                        .update_task_progress(task_id, progress)
+                        .await;
+                }
             }
         }
         if succeeded == total {
             service::doc::update_doc_status(&self.db_pool, *id, 2).await?;
+            progress = 1.0;
+            self.queue_state
+                .update_task_progress(task_id, progress)
+                .await;
         }
         Ok(Some(format!(
             "{},{}/{}",
@@ -240,8 +296,8 @@ impl TaskWorker {
     async fn process_cbz_archive_task(&self, id: &i32) -> Result<Option<String>> {
         let mut doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
         let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
-        doc.page_count = Some(pics.len().to_string());
-        let doc_xml = ComicInfo::from_doc(doc.clone());
+        doc.page_count = Some(pics.len() as i16);
+        let doc_xml: ComicInfo = ComicInfo::from(doc.clone());
         let mut xml = String::new();
         quick_xml::se::to_writer(&mut xml, &doc_xml).expect("Failed to serialize ComicInfo Xml");
         let xml_with_decl = format!(r#"<?xml version="1.0" encoding="utf-8"?>{}"#, xml);

@@ -50,7 +50,7 @@ async fn queued_tasks(State(state): State<AppState>) -> impl IntoResponse {
             TaskStatus::Pending => stats.pending += 1,
             TaskStatus::Processing => stats.processing += 1,
             TaskStatus::Completed => stats.completed += 1,
-            TaskStatus::Failed(_) => stats.failed += 1,
+            TaskStatus::Failed => stats.failed += 1,
         }
     }
     let response = QueueInfo {
@@ -105,7 +105,7 @@ async fn enqueue_task(
     let doc_status = doc.status;
     let task = match doc_status {
         0 => Task::new_html_parse_task(payload.id),
-        1 => Task::new_pic_download_task(payload.id),
+        1 => Task::new_doc_download_task(payload.id),
         2 | 3 => Task::new_cbz_archive_task(payload.id),
         _ => {
             return (
@@ -135,7 +135,7 @@ pub async fn sse_handler(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.queue_state.sender.subscribe();
     let mut shutdown_rx = state.shutdown.get_shutdown_rx().await;
-    let stream = StreamExt::chain(
+    let sse_stream = StreamExt::chain(
         StreamExt::filter_map(
             BroadcastStream::new(rx).take_until(async move {
                 let _ = shutdown_rx.recv().await;
@@ -158,7 +158,7 @@ pub async fn sse_handler(
         }),
     );
 
-    Sse::new(stream).keep_alive(
+    Sse::new(sse_stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(10))
             .text("keep-alive"),

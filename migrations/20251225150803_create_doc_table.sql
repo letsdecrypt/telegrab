@@ -28,7 +28,7 @@ create table doc
     genre            text,
     tags             text,
     web              text,
-    page_count       text,
+    page_count       smallint,
     language         text,
     format           text,
     black_and_white  bool,

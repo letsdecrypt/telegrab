@@ -1,10 +1,12 @@
 use crate::controller::pic::PicQuery;
-use crate::model::dto::pagination::RefineSortOrder;
+use crate::model::dto::pagination::{CursorBasedPaginationResponse, RefineSortOrder};
 use crate::model::dto::pagination::{PaginationQuery, PaginationResponse};
 use crate::model::dto::pic::MutatePicReq;
 use crate::model::entity::pic::Pic;
+use crate::model::{Direction, PaginationArgs};
+use crate::service::helper::build_cursor_pagination;
 use convert_case::{Case, Casing};
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, query_scalar};
 use sqlx_postgres::PgPool;
 
 pub async fn create_pic(pool: &PgPool, params: MutatePicReq) -> Result<Pic, sqlx::Error> {
@@ -20,6 +22,17 @@ pub async fn create_pic(pool: &PgPool, params: MutatePicReq) -> Result<Pic, sqlx
 pub async fn get_pic_by_id(pool: &PgPool, id: i32) -> Result<Pic, sqlx::Error> {
     let sql = "SELECT * FROM pic WHERE id = $1";
     query_as(sql).bind(id).fetch_one(pool).await
+}
+pub async fn get_cover_pic_by_doc_id(pool: &PgPool, doc_id: i32)->Result<Pic, sqlx::Error>{
+    let sql = "SELECT * FROM pic WHERE doc_id = $1 and seq = 0 ORDER BY seq LIMIT 1";
+    query_as(sql).bind(doc_id).fetch_one(pool).await
+}
+pub async fn get_pics_by_ids(
+    pool: &PgPool,
+    ids: &[i32],
+) -> Result<Vec<Pic>, sqlx::Error> {
+    let sql = "SELECT * FROM pic WHERE id = ANY($1)";
+    query_as(sql).bind(ids).fetch_all(pool).await
 }
 
 pub async fn get_pics(
@@ -92,6 +105,18 @@ pub async fn update_pic_by_id(
         .fetch_one(pool)
         .await
 }
+pub async fn update_pic_status_by_id(
+    pool: &PgPool,
+    id: i32,
+    status: i16,
+) -> Result<Pic, sqlx::Error> {
+    let sql = "UPDATE pic SET status = $1 WHERE id = $2 RETURNING *";
+    query_as(sql)
+        .bind(status)
+        .bind(id)
+        .fetch_one(pool)
+        .await
+}
 pub async fn delete_pic_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
     let sql = "DELETE FROM pic WHERE id = $1";
     query(sql)
@@ -104,4 +129,51 @@ pub async fn delete_pic_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error
 pub async fn get_pics_by_doc_id(pool: &PgPool, doc_id: i32) -> Result<Vec<Pic>, sqlx::Error> {
     let sql = "SELECT * FROM pic WHERE doc_id = $1 ORDER BY seq";
     query_as(sql).bind(doc_id).fetch_all(pool).await
+}
+
+pub async fn get_cursor_based_pagination_pics(
+    pool: &PgPool,
+    pagination_args: PaginationArgs,
+    doc_id: i32,
+) -> Result<CursorBasedPaginationResponse<Pic>, sqlx::Error> {
+    let total: i64 = query_scalar("SELECT COUNT(*) from pic WHERE doc_id = $1")
+        .bind(doc_id)
+        .fetch_one(pool)
+        .await?;
+    let PaginationArgs {
+        limit,
+        cursor,
+        direction,
+    } = pagination_args;
+    let main_sql = "SELECT * FROM pic WHERE doc_id = $1";
+    let order_by_clause = match direction {
+        Direction::Forward => "ORDER BY seq",
+        Direction::Backward => "ORDER BY seq DESC",
+    };
+    let pics = if let Some(cursor) = cursor {
+        let where_clause = format!(
+            "AND id {} $2",
+            if direction == Direction::Forward {
+                " > "
+            } else {
+                " < "
+            }
+        );
+        let sql = format!("{} {} {} LIMIT $3", main_sql, where_clause, order_by_clause);
+        query_as(&sql)
+            .bind(doc_id)
+            .bind(cursor)
+            .bind(limit as i64 + 1)
+            .fetch_all(pool)
+            .await?
+    } else {
+        let sql = format!("{} {} LIMIT $2", main_sql, order_by_clause);
+        query_as(&sql)
+            .bind(doc_id)
+            .bind(limit as i64 + 1)
+            .fetch_all(pool)
+            .await?
+    };
+    let paged = build_cursor_pagination(pics, total as u64, limit, direction, cursor.is_some());
+    Ok(paged)
 }

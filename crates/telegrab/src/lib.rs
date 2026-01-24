@@ -10,6 +10,8 @@ pub mod http_client;
 pub mod listener;
 pub mod middleware;
 pub mod model;
+pub mod repository;
+pub mod schema;
 pub mod service;
 pub mod shutdown_signal;
 pub mod startup;

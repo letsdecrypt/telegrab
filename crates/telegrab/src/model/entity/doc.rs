@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use time::OffsetDateTime;
 use time::serde::rfc3339;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +35,7 @@ pub struct Doc {
     pub genre: Option<String>,
     pub tags: Option<String>,
     pub web: Option<String>,
-    pub page_count: Option<String>,
+    pub page_count: Option<i16>,
     pub language: Option<String>,
     pub format: Option<String>,
     pub black_and_white: Option<bool>,
@@ -67,14 +67,14 @@ pub struct ShimDoc {
 #[serde(rename = "Page")]
 pub struct PageInfo {
     #[serde(rename = "@Image")]
-    pub image: u32,
+    pub image: usize,
     #[serde(rename = "@Type")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page_type: Option<String>,
 }
 
 impl PageInfo {
-    pub fn with_count(count: u32) -> Vec<Self> {
+    pub fn with_count(count: usize) -> Vec<Self> {
         (0..count)
             .map(|idx| {
                 let type_str = match idx {
@@ -174,9 +174,10 @@ pub struct ComicInfo {
     pub critical_rating: Option<String>,
 }
 
-impl ComicInfo {
-    pub fn from_doc(doc: Doc) -> Self {
-        let page_info = PageInfo::with_count(doc.page_count.clone().unwrap().parse().unwrap_or(0));
+impl From<Doc> for ComicInfo {
+    fn from(doc: Doc) -> Self {
+        let page_count = doc.page_count.unwrap_or(0);
+        let page_info = PageInfo::with_count(page_count as usize);
         ComicInfo {
             title: doc.title,
             series: doc.series,
@@ -200,7 +201,7 @@ impl ComicInfo {
             genre: doc.genre,
             tags: doc.tags,
             web: doc.web,
-            page_count: doc.page_count,
+            page_count: doc.page_count.map(|s| s.to_string()),
             pages: Pages { page: page_info },
             language: doc.language,
             format: doc.format,

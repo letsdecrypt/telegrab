@@ -1,3 +1,4 @@
+use async_graphql::Enum;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -6,6 +7,7 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub enum TaskType {
     HtmlParse { id: i32 },
+    DocDownload { id: i32 },
     PicDownload { id: i32 },
     CbzArchive { id: i32 },
     ScanDir,
@@ -15,12 +17,12 @@ pub enum TaskType {
     HtmlParseAll,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Enum, Serialize, Deserialize)]
 pub enum TaskStatus {
     Pending,
     Processing,
     Completed,
-    Failed(String),
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,10 +51,22 @@ impl Task {
             error: None,
         }
     }
-    pub fn new_pic_download_task(doc_id: i32) -> Self {
+    pub fn new_doc_download_task(doc_id: i32) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
-            task_type: TaskType::PicDownload { id: doc_id },
+            task_type: TaskType::DocDownload { id: doc_id },
+            status: TaskStatus::Pending,
+            created_at: OffsetDateTime::now_utc(),
+            started_at: None,
+            completed_at: None,
+            result: None,
+            error: None,
+        }
+    }
+    pub fn new_pic_download_task(pic_id: i32) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            task_type: TaskType::PicDownload { id: pic_id },
             status: TaskStatus::Pending,
             created_at: OffsetDateTime::now_utc(),
             started_at: None,
@@ -143,13 +157,16 @@ impl Task {
         self.result = result;
     }
     pub fn mark_failed(&mut self, error: String) {
-        self.status = TaskStatus::Failed(error.clone());
+        self.status = TaskStatus::Failed;
         self.completed_at = Some(OffsetDateTime::now_utc());
         self.error = Some(error);
     }
     pub fn description(&self) -> String {
         match &self.task_type {
             TaskType::HtmlParse { id: doc_id } => format!("Parse doc: {}", doc_id),
+            TaskType::DocDownload { id: doc_id } => {
+                format!("Download pic: {}", doc_id)
+            }
             TaskType::PicDownload { id: pic_id } => {
                 format!("Download pic: {}", pic_id)
             }
@@ -171,6 +188,7 @@ impl From<TaskType> for String {
     fn from(val: TaskType) -> Self {
         match val {
             TaskType::HtmlParse { id } => format!("HtmlParse: {}", id),
+            TaskType::DocDownload { id } => format!("DocDownload: {}", id),
             TaskType::PicDownload { id } => format!("PicDownload: {}", id),
             TaskType::CbzArchive { id } => format!("CbzArchive: {}", id),
             TaskType::ScanDir => "ScanDir".to_string(),
@@ -239,6 +257,7 @@ pub enum QueueEvent {
     TaskAdded(Task),
     TaskRemoved(String),
     TaskUpdated(Task),
+    TaskProgress(String, f64),
     QueueCleared,
 }
 

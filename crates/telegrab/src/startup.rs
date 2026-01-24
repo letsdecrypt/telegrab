@@ -1,7 +1,7 @@
 use crate::{
     Result,
     configuration::Settings,
-    controller::{assets, cbz, doc, health_check, pic, task},
+    controller::{assets, cbz, doc, health_check, pic, task, gallery},
     errors::Error::ListenerError,
     listener,
     middleware::{TeleGrabRequestId, request_id_middleware},
@@ -14,6 +14,7 @@ use tower_http::trace::TraceLayer;
 pub fn app(state: AppState) -> Router {
     Router::new()
         .nest("/resource", assets::routers(&state))
+        .nest("/graphql", gallery::routers(&state))
         .route("/api/health", get(health_check::health))
         .nest("/api/doc", doc::routers())
         .nest("/api/pic", pic::routers())

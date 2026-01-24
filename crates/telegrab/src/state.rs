@@ -64,6 +64,12 @@ impl QueueState {
             active_task.progress = Some(progress);
             let diff = (OffsetDateTime::now_utc() - active_task.started_at).whole_milliseconds();
             active_task.duration_secs = diff as f64 / 1000.0;
+            if let Err(e) = self
+                .sender
+                .send(QueueEvent::TaskProgress(task_id.to_string(), progress))
+            {
+                tracing::warn!("send task progress event failed: {:?}", e);
+            }
             true
         } else {
             false
@@ -86,12 +92,41 @@ impl QueueState {
         let active_tasks = self.active_tasks.read().await;
         active_tasks.len()
     }
+    pub async fn find_doc_in_queue(&self, doc_id: i32) -> Option<Task> {
+        let tasks = self.tasks.read().await;
+        tasks
+            .iter()
+            .find(|t| match t.task_type {
+                TaskType::HtmlParse { id } => id == doc_id,
+                TaskType::DocDownload { id } => id == doc_id,
+                TaskType::CbzArchive { id } => id == doc_id,
+                _ => false,
+            })
+            .cloned()
+    }
+    pub async fn find_pic_in_queue(&self, pic_id: i32) -> Option<Task> {
+        let tasks = self.tasks.read().await;
+        tasks
+            .iter()
+            .find(|t| match t.task_type {
+                TaskType::PicDownload { id } => id == pic_id,
+                _ => false,
+            })
+            .cloned()
+    }
     pub async fn is_doc_active(&self, doc_id: i32) -> bool {
         let active_tasks = self.active_tasks.read().await;
         active_tasks.values().any(|t| match t.task_type {
             TaskType::HtmlParse { id } => id == doc_id,
-            TaskType::PicDownload { id } => id == doc_id,
+            TaskType::DocDownload { id } => id == doc_id,
             TaskType::CbzArchive { id } => id == doc_id,
+            _ => false,
+        })
+    }
+    pub async fn is_pic_active(&self, pic_id: i32) -> bool {
+        let active_tasks = self.active_tasks.read().await;
+        active_tasks.values().any(|t| match t.task_type {
+            TaskType::PicDownload { id } => id == pic_id,
             _ => false,
         })
     }
@@ -199,7 +234,7 @@ impl QueueState {
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub queue_state: QueueState,
+    pub queue_state: Arc<QueueState>,
     pub fs_watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
     pub shutdown: Arc<GracefulShutdown>,
     pub db_pool: Arc<PgPool>,
@@ -212,7 +247,7 @@ pub struct AppState {
 
 impl AppState {
     pub async fn build(configuration: &Settings) -> Self {
-        let queue_state = QueueState::new();
+        let queue_state = Arc::new(QueueState::new());
         let db_pool = Arc::new(
             PgPoolOptions::new()
                 .acquire_timeout(Duration::from_secs(2))

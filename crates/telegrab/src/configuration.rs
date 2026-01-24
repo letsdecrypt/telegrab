@@ -168,6 +168,10 @@ impl DatabaseSettings {
         } else {
             PgSslMode::Prefer
         };
+        if self.host.starts_with("/") {
+            // Unix socket, so we don't need other options.
+            return PgConnectOptions::new().host(&self.host);
+        }
         PgConnectOptions::new()
             .host(&self.host)
             .port(self.port)

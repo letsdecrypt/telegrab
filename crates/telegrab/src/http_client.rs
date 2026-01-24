@@ -22,16 +22,21 @@ impl HttpClientManager {
         let client_builder = Client::builder()
             .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
             .timeout(Duration::from_secs(config.timeout_secs))
+            .tcp_nodelay(true)
+            .tcp_keepalive(Duration::from_secs(60))
+            .http2_adaptive_window(true)
+            .http2_initial_stream_window_size(Some(2 * 1024 * 1024))
+            .http2_initial_connection_window_size(Some(4 * 1024 * 1024))
             .user_agent(&config.user_agent);
         let client = if config.pool_enabled {
             client_builder
                 .pool_max_idle_per_host(config.max_connections)
                 .build()
-                .expect("Failed to create HTTP client with connection pool")
+                .unwrap_or_else(|_| reqwest::Client::new())
         } else {
             client_builder
                 .build()
-                .expect("Failed to create HTTP client")
+                .unwrap_or_else(|_| reqwest::Client::new())
         };
         Self {
             client: Arc::new(client),
