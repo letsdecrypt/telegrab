@@ -191,16 +191,21 @@ impl TaskWorker {
         }
         self.inner_process_html_parse(&doc).await
     }
-    async fn process_html_parse_all_task(&self,task_id:&str) -> Result<Option<String>> {
+    async fn process_html_parse_all_task(&self, task_id: &str) -> Result<Option<String>> {
         let docs = service::doc::get_unparsed_docs(&self.db_pool).await?;
         let total = docs.len();
         let mut succeeded = 0;
         let mut progress = 0f64;
         for doc in docs {
-            if doc.status==0
-                && let Err(_) = self.inner_process_html_parse(&doc).await {
-                    tracing::warn!("Worker {} process html parse task for doc {} failed", self.worker_id, doc.id);
-                }
+            if doc.status == 0
+                && let Err(_) = self.inner_process_html_parse(&doc).await
+            {
+                tracing::warn!(
+                    "Worker {} process html parse task for doc {} failed",
+                    self.worker_id,
+                    doc.id
+                );
+            }
             succeeded += 1;
             let new_progress = succeeded as f64 / total as f64;
             if new_progress - progress > 1.0 {
@@ -211,15 +216,16 @@ impl TaskWorker {
             }
         }
         progress = 1.0;
-        self.queue_state.update_task_progress(task_id, progress).await;
+        self.queue_state
+            .update_task_progress(task_id, progress)
+            .await;
         Ok(None)
     }
     async fn process_pic_download_task(&self, id: &i32) -> Result<Option<String>> {
         let pic = service::pic::get_pic_by_id(&self.db_pool, *id).await?;
         let doc = service::doc::get_doc_by_id(&self.db_pool, pic.doc_id).await?;
         let total: usize = doc.page_count.map(|n| n as usize).unwrap_or(1);
-        let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
-        let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
+        let last_path_segment = url_last_segment(&doc.url);
         let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
         ensure_dir_exists(&save_dir).await?;
         self.inner_process_pic_download(&pic, total, &save_dir)
@@ -259,8 +265,7 @@ impl TaskWorker {
     }
     async fn process_doc_download_task(&self, id: &i32, task_id: &str) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
-        let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
-        let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
+        let last_path_segment = url_last_segment(&doc.url);
         let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
         ensure_dir_exists(&save_dir).await?;
         let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
@@ -301,10 +306,9 @@ impl TaskWorker {
         let mut xml = String::new();
         quick_xml::se::to_writer(&mut xml, &doc_xml).expect("Failed to serialize ComicInfo Xml");
         let xml_with_decl = format!(r#"<?xml version="1.0" encoding="utf-8"?>{}"#, xml);
-        let parsed_url = url::Url::parse(&doc.url).expect("Invalid url");
-        let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
+        let last_path_segment = url_last_segment(&doc.url);
         ensure_dir_exists(&self.cbz_dir).await?;
-        let pic_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
+        let pic_dir = PathBuf::from(&self.pic_dir).join(&last_path_segment);
         let files_result = get_files_in_dir(&pic_dir);
         if let Err(err) = files_result {
             tracing::warn!(
@@ -602,4 +606,11 @@ async fn scan_dir_recursive(dir_path: &Path, files: &mut HashSet<PathBuf>) {
             files.insert(path);
         }
     }
+}
+fn url_last_segment(url: &str) -> String {
+    let parsed_url = url::Url::parse(url).expect("Invalid url");
+    let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
+    url::form_urlencoded::parse(last_path_segment.as_bytes())
+        .map(|(key, _)| key)
+        .collect()
 }
