@@ -130,6 +130,10 @@ pub async fn get_pics_by_doc_id(pool: &PgPool, doc_id: i32) -> Result<Vec<Pic>, 
     let sql = "SELECT * FROM pic WHERE doc_id = $1 ORDER BY seq";
     query_as(sql).bind(doc_id).fetch_all(pool).await
 }
+pub async fn has_status_0_pics_by_doc_id(pool: &PgPool, doc_id: i32) -> Result<bool, sqlx::Error> {
+    let sql = r#"SELECT EXISTS(SELECT 1 FROM pic WHERE doc_id = $1 AND status == 0 ORDER BY seq) AS "exists: bool""#;
+    query_scalar(sql).bind(doc_id).fetch_one(pool).await
+}
 
 pub async fn get_cursor_based_pagination_pics(
     pool: &PgPool,
