@@ -17,6 +17,10 @@ pub async fn get_doc_by_id(pool: &PgPool, id: i32) -> Result<Doc, sqlx::Error> {
     let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = $1";
     query_as(sql).bind(id).fetch_one(pool).await
 }
+pub async fn get_random_doc(pool:&PgPool) ->Result<Doc, sqlx::Error>{
+    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id ORDER BY RANDOM() LIMIT 1";
+    query_as(sql).fetch_one(pool).await
+}
 
 pub async fn get_docs_by_ids(
     pool: &PgPool,
@@ -222,7 +226,7 @@ pub async fn update_parsed_doc(
     Ok(doc)
 }
 
-pub async fn update_doc_status(pool: &PgPool, id: i32, status: i32) -> Result<u64, sqlx::Error> {
+pub async fn update_doc_status(pool: &PgPool, id: i32, status: i16) -> Result<u64, sqlx::Error> {
     let sql = "UPDATE doc SET status = $1 WHERE id = $2";
     query(sql)
         .bind(status)
@@ -235,7 +239,7 @@ pub async fn update_doc_status(pool: &PgPool, id: i32, status: i32) -> Result<u6
 pub async fn get_cursor_based_pagination_docs(
     pool: &PgPool,
     pagination_args: PaginationArgs,
-    title:Option<String>,
+    _title:Option<String>,
 ) -> Result<CursorBasedPaginationResponse<Doc>, sqlx::Error> {
     let total: i64 = query_scalar("SELECT COUNT(*) FROM doc")
         .fetch_one(pool)

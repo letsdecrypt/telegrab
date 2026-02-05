@@ -228,8 +228,15 @@ impl TaskWorker {
         let last_path_segment = url_last_segment(&doc.url);
         let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
         ensure_dir_exists(&save_dir).await?;
-        self.inner_process_pic_download(&pic, total, &save_dir)
+        if self
+            .inner_process_pic_download(&pic, total, &save_dir)
             .await
+            .is_ok()
+            && !service::pic::has_status_0_pics_by_doc_id(&self.db_pool, doc.id).await?
+        {
+            let _ = service::doc::update_doc_status(&self.db_pool, doc.id, 2).await;
+        }
+        Ok(None)
     }
     async fn inner_process_pic_download(
         &self,
@@ -237,6 +244,9 @@ impl TaskWorker {
         total: usize,
         save_dir: &Path,
     ) -> Result<Option<String>> {
+        if pic.status != 0 {
+            return Ok(None);
+        }
         let pic_url = pic.url.clone();
         let seq = pic.seq;
         let ext = pic_url.split('.').next_back().unwrap_or("jpg");
@@ -248,6 +258,7 @@ impl TaskWorker {
                 self.worker_id,
                 pic.id
             );
+            service::pic::update_pic_status_by_id(&self.db_pool, pic.id, 1).await?;
             return Ok(Some(format!("Pic {} already exists", pic.id)));
         }
         if let Err(err) = self.http_client.download_file(&pic_url, &filepath).await {
@@ -284,13 +295,14 @@ impl TaskWorker {
                 }
             }
         }
-        if succeeded == total {
-            service::doc::update_doc_status(&self.db_pool, *id, 2).await?;
+        if !service::pic::has_status_0_pics_by_doc_id(&self.db_pool, doc.id).await?
+        {
             progress = 1.0;
-            self.queue_state
-                .update_task_progress(task_id, progress)
-                .await;
+            let _ = service::doc::update_doc_status(&self.db_pool, doc.id, 2).await;
         }
+        self.queue_state
+            .update_task_progress(task_id, progress)
+            .await;
         Ok(Some(format!(
             "{},{}/{}",
             save_dir.to_str().unwrap(),

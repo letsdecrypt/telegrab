@@ -7,7 +7,6 @@ use time::OffsetDateTime;
 
 #[derive(InputObject, Debug, Clone)]
 pub struct CreateAlbumInput {
-    #[graphql(validator(url))]
     pub url: String,
     pub client_mutation_id: Option<String>,
 }

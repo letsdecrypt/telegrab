@@ -136,6 +136,12 @@ pub struct AlbumQuery;
 
 #[Object]
 impl AlbumQuery {
+    async fn random_album(&self, ctx: &Context<'_>) -> async_graphql::Result<Album> {
+        let pool = ctx.data::<ArcPgPool>()?;
+        let doc = service::doc::get_random_doc(pool).await?;
+        let album = doc.into();
+        Ok(album)
+    }
     async fn album(&self, ctx: &Context<'_>, id: ID) -> async_graphql::Result<Album> {
         let pool = ctx.data::<ArcPgPool>()?;
         let (_, id) = from_global_id(id.0.as_str())?;
@@ -172,9 +178,10 @@ impl AlbumQuery {
             |after, before, first, last| async move {
                 let pagination = process_pagination(after, before, first, last)
                     .map_err(|e| async_graphql::Error::new(e.message.to_string()))?;
-                let paged_docs = service::doc::get_cursor_based_pagination_docs(pool, pagination, title)
-                    .await
-                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+                let paged_docs =
+                    service::doc::get_cursor_based_pagination_docs(pool, pagination, title)
+                        .await
+                        .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
                 let albums: Vec<Album> =
                     paged_docs.data.into_iter().map(|doc| doc.into()).collect();
                 let mut connection = Connection::with_additional_fields(
