@@ -2,8 +2,9 @@ use crate::configuration::Settings;
 use crate::graceful::GracefulShutdown;
 use crate::http_client::HttpClientManager;
 use crate::model::entity::task::{ActiveTaskInfo, QueueEvent, Task, TaskStatus, TaskType};
+use dashmap::DashMap;
 use sqlx_postgres::{PgPool, PgPoolOptions};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -12,8 +13,8 @@ use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 #[derive(Debug, Clone)]
 pub struct QueueState {
     pub tasks: Arc<RwLock<VecDeque<Task>>>,
-    pub active_tasks: Arc<RwLock<HashMap<String, ActiveTaskInfo>>>,
-    pub task_store: Arc<RwLock<HashMap<String, Task>>>,
+    pub active_tasks: Arc<DashMap<String, ActiveTaskInfo>>,
+    pub task_store: Arc<DashMap<String, Task>>,
     pub sender: broadcast::Sender<QueueEvent>,
     pub notify: Arc<Notify>,
 }
@@ -29,15 +30,13 @@ impl QueueState {
         let (sender, _) = broadcast::channel(1024);
         Self {
             tasks: Arc::new(RwLock::new(VecDeque::new())),
-            active_tasks: Arc::new(RwLock::new(HashMap::new())),
-            task_store: Arc::new(RwLock::new(HashMap::new())),
+            active_tasks: Arc::new(DashMap::new()),
+            task_store: Arc::new(DashMap::new()),
             sender,
             notify: Arc::new(Notify::new()),
         }
     }
     pub async fn register_active_task(&self, task: &Task, worker_id: usize) {
-        let mut active_tasks = self.active_tasks.write().await;
-
         let active_task = ActiveTaskInfo {
             task_id: task.id.clone(),
             task_type: task.task_type.clone(),
@@ -47,23 +46,22 @@ impl QueueState {
             duration_secs: 0.0,
             progress: None,
         };
-        active_tasks.insert(task.id.clone(), active_task);
+        self.active_tasks.insert(task.id.clone(), active_task);
         tracing::debug!("register active task {} (worker {})", task.id, worker_id);
     }
     pub async fn unregister_active_task(&self, task_id: &str) -> bool {
-        let mut active_tasks = self.active_tasks.write().await;
-        let removed = active_tasks.remove(task_id).is_some();
+        let removed = self.active_tasks.remove(task_id).is_some();
         if removed {
             tracing::debug!("unregister active task {}", task_id);
         }
         removed
     }
     pub async fn update_task_progress(&self, task_id: &str, progress: f64) -> bool {
-        let mut active_tasks = self.active_tasks.write().await;
-        if let Some(active_task) = active_tasks.get_mut(task_id) {
+        if let Some(mut active_task) = self.active_tasks.get_mut(task_id) {
             active_task.progress = Some(progress);
             let diff = (OffsetDateTime::now_utc() - active_task.started_at).whole_milliseconds();
             active_task.duration_secs = diff as f64 / 1000.0;
+            drop(active_task); // release the lock before sending event
             if let Err(e) = self
                 .sender
                 .send(QueueEvent::TaskProgress(task_id.to_string(), progress))
@@ -76,12 +74,11 @@ impl QueueState {
         }
     }
     pub async fn get_active_tasks(&self) -> Vec<ActiveTaskInfo> {
-        let active_tasks = self.active_tasks.read().await;
         let now = OffsetDateTime::now_utc();
-        active_tasks
-            .values()
-            .map(|t| {
-                let mut task = t.clone();
+        self.active_tasks
+            .iter()
+            .map(|r| {
+                let mut task = r.value().clone();
                 let diff = (now - task.started_at).whole_milliseconds();
                 task.duration_secs = diff as f64 / 1000.0;
                 task
@@ -89,8 +86,7 @@ impl QueueState {
             .collect()
     }
     pub async fn active_task_count(&self) -> usize {
-        let active_tasks = self.active_tasks.read().await;
-        active_tasks.len()
+        self.active_tasks.len()
     }
     pub async fn find_doc_in_queue(&self, doc_id: i32) -> Option<Task> {
         let tasks = self.tasks.read().await;
@@ -115,8 +111,7 @@ impl QueueState {
             .cloned()
     }
     pub async fn is_doc_active(&self, doc_id: i32) -> bool {
-        let active_tasks = self.active_tasks.read().await;
-        active_tasks.values().any(|t| match t.task_type {
+        self.active_tasks.iter().any(|r| match r.value().task_type {
             TaskType::HtmlParse { id } => id == doc_id,
             TaskType::DocDownload { id } => id == doc_id,
             TaskType::CbzArchive { id } => id == doc_id,
@@ -124,39 +119,33 @@ impl QueueState {
         })
     }
     pub async fn is_pic_active(&self, pic_id: i32) -> bool {
-        let active_tasks = self.active_tasks.read().await;
-        active_tasks.values().any(|t| match t.task_type {
+        self.active_tasks.iter().any(|r| match r.value().task_type {
             TaskType::PicDownload { id } => id == pic_id,
             _ => false,
         })
     }
     pub async fn is_scan_active(&self) -> bool {
-        let active_tasks = self.active_tasks.read().await;
-        active_tasks
-            .values()
-            .any(|t| matches!(t.task_type, TaskType::ScanDir))
+        self.active_tasks
+            .iter()
+            .any(|r| matches!(r.value().task_type, TaskType::ScanDir))
     }
     pub async fn is_parse_all_active(&self) -> bool {
-        let active_tasks = self.active_tasks.read().await;
-        active_tasks
-            .values()
-            .any(|t| matches!(t.task_type, TaskType::HtmlParseAll))
+        self.active_tasks
+            .iter()
+            .any(|r| matches!(r.value().task_type, TaskType::HtmlParseAll))
     }
     pub async fn size(&self) -> usize {
         let tasks = self.tasks.read().await;
         tasks.len()
     }
     pub async fn get_tasks(&self) -> Vec<Task> {
-        let task_store = self.task_store.read().await;
-        task_store.values().cloned().collect()
+        self.task_store.iter().map(|r| r.value().clone()).collect()
     }
     pub async fn get_task(&self, task_id: &str) -> Option<Task> {
-        let task_store = self.task_store.read().await;
-        task_store.get(task_id).cloned()
+        self.task_store.get(task_id).map(|r| r.value().clone())
     }
     pub async fn update_task(&self, updated_task: Task) -> bool {
-        let mut task_store = self.task_store.write().await;
-        task_store.insert(updated_task.id.clone(), updated_task.clone());
+        self.task_store.insert(updated_task.id.clone(), updated_task.clone());
         if let Err(e) = self.sender.send(QueueEvent::TaskUpdated(updated_task)) {
             tracing::warn!("send task updated event failed: {:?}", e);
         }
@@ -166,8 +155,7 @@ impl QueueState {
         let task_clone = task.clone();
         let mut tasks = self.tasks.write().await;
         tasks.push_back(task.clone());
-        let mut task_store = self.task_store.write().await;
-        task_store.insert(task.id.clone(), task);
+        self.task_store.insert(task.id.clone(), task);
         self.notify.notify_one();
         if let Err(e) = self.sender.send(QueueEvent::TaskAdded(task_clone)) {
             tracing::warn!("send task enqueued event failed: {:?}", e);
@@ -208,23 +196,22 @@ impl QueueState {
         cleared
     }
     pub async fn cleanup_completed_tasks(&self, keep_recent: usize) -> usize {
-        let mut task_store = self.task_store.write().await;
         let mut completed_tasks: Vec<String> = Vec::new();
-        for (id, task) in task_store.iter() {
-            if let TaskStatus::Completed = task.status {
-                completed_tasks.push(id.clone());
+        for r in self.task_store.iter() {
+            if let TaskStatus::Completed = r.value().status {
+                completed_tasks.push(r.key().clone());
             }
         }
         let mut removed_count = 0;
         if completed_tasks.len() > keep_recent {
             completed_tasks.sort_by(|a, b| {
-                let a = task_store.get(a).unwrap();
-                let b = task_store.get(b).unwrap();
+                let a = self.task_store.get(a).unwrap();
+                let b = self.task_store.get(b).unwrap();
                 b.created_at.cmp(&a.created_at)
             });
             let to_remove = completed_tasks.len() - keep_recent;
             for id in completed_tasks.iter().take(to_remove) {
-                task_store.remove(id);
+                self.task_store.remove(id);
                 removed_count += 1;
             }
         }

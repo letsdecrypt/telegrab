@@ -25,6 +25,7 @@ base64 = "0.22.1"
 colored = "3.1.1"
 config = { version = "0.15.19", default-features = false, features = ["yaml"] }
 convert_case = "0.11"
+dashmap = "6"
 futures = "0.3"
 futures-util = { version = "0.3", features = ["sink", "std"] }
 hyper = "1.8.1"
@@ -32,7 +33,7 @@ notify = "8.2.0"
 quick-xml = { version = "0.39", features = ["serialize"] }
 regex = "1.12.3"
 reqwest = "0.13"
-scraper = "0.25.0"
+scraper = "0.26.0"
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-aux = "4.7.0"
@@ -46,7 +47,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tower-http = { version = "0.6", features = ["trace", "fs"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2.5"
 uuid = { version = "1.22", features = ["v4", "serde"] }
 validator = "0.20.0"

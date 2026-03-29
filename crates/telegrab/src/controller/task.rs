@@ -173,11 +173,12 @@ async fn cleanup_completed_tasks(
         .queue_state
         .cleanup_completed_tasks(payload.keep_recent)
         .await;
-    let tasks = state.queue_state.task_store.read().await;
-    let total_tasks = tasks.len();
-    let remaining_completed = tasks
+    let total_tasks = state.queue_state.task_store.len();
+    let remaining_completed = state
+        .queue_state
+        .task_store
         .iter()
-        .filter(|(_, task)| matches!(task.status, TaskStatus::Completed))
+        .filter(|r| matches!(r.value().status, TaskStatus::Completed))
         .count();
     let message = if removed_count > 0 {
         format!(

@@ -81,10 +81,10 @@ impl TaskMutation {
         let states = ctx.data::<ArcStates>()?;
         let client_mutation_id = input.client_mutation_id.clone();
         let removed_count = states.cleanup_completed_tasks(input.keep_recent).await;
-        let tasks = states.task_store.read().await;
-        let remaining_completed = tasks
+        let remaining_completed = states
+            .task_store
             .iter()
-            .filter(|(_, task)| matches!(task.status, TaskStatus::Completed))
+            .filter(|r| matches!(r.value().status, TaskStatus::Completed))
             .count();
         Ok(CleanUpPayload {
             removed_count,
