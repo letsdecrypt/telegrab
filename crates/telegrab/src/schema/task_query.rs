@@ -1,5 +1,5 @@
 use crate::model::entity::task::{ActiveTaskInfo, Task, TaskStatus, TaskType};
-use crate::schema::helper::{to_global_id, ArcStates, RelayTy};
+use crate::schema::helper::{ArcStates, RelayTy, to_global_id};
 use async_graphql::{Context, Enum, Object, Result, SimpleObject};
 use time::OffsetDateTime;
 
@@ -42,7 +42,7 @@ pub struct GActiveTask {
     pub progress: Option<f64>,
 }
 
-fn task_type_to_g(task_type: TaskType)->(Option<String>, GTaskType){
+fn task_type_to_g(task_type: TaskType) -> (Option<String>, GTaskType) {
     match task_type {
         TaskType::HtmlParse { id } => (
             Some(to_global_id(RelayTy::Album, id as usize)),
@@ -117,7 +117,7 @@ impl TaskQuery {
             .collect();
         Ok(tasks)
     }
-    async fn active_tasks(&self, ctx: &Context<'_>) -> Result<Vec<GActiveTask>>{
+    async fn active_tasks(&self, ctx: &Context<'_>) -> Result<Vec<GActiveTask>> {
         let states = ctx.data::<ArcStates>()?;
         let tasks = states
             .get_active_tasks()

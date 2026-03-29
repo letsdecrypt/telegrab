@@ -1,7 +1,7 @@
 use crate::{
     Result,
     configuration::Settings,
-    controller::{assets, cbz, doc, health_check, pic, task, gallery},
+    controller::{assets, cbz, doc, gallery, health_check, pic, task},
     errors::Error::ListenerError,
     listener,
     middleware::{TeleGrabRequestId, request_id_middleware},

@@ -1,5 +1,5 @@
 use crate::model::entity::pic::Pic;
-use crate::schema::{from_global_id, to_global_id, ArcPgPool, RelayTy};
+use crate::schema::{ArcPgPool, RelayTy, from_global_id, to_global_id};
 use crate::service;
 use async_graphql::connection::{ConnectionNameType, EdgeNameType};
 use async_graphql::dataloader::{DataLoader, Loader, LruCache};
@@ -9,7 +9,7 @@ use std::sync::Arc;
 use time::OffsetDateTime;
 
 pub struct ImageLoader {
-    pool: ArcPgPool,
+    pub pool: ArcPgPool,
 }
 impl Loader<i32> for ImageLoader {
     type Value = Image;
@@ -53,11 +53,13 @@ pub struct ImageQuery;
 #[Object]
 impl ImageQuery {
     async fn image(&self, ctx: &Context<'_>, id: String) -> Result<Image> {
-        let pool = ctx.data::<ArcPgPool>()?;
         let (_, id) = from_global_id(id.as_str())?;
-        let _loader = ctx.data::<DataLoader<ImageLoader, LruCache>>(); // todo: data loader
-        let pic = service::pic::get_pic_by_id(pool, id as i32).await?;
-        let image = pic.into();
+        let loader = ctx.data::<DataLoader<ImageLoader, LruCache>>()?;
+        let image = loader
+            .load_one(id as i32)
+            .await
+            .map_err(|e| async_graphql::Error::new(format!("{}", e)))?
+            .ok_or_else(|| async_graphql::Error::new("Image not found"))?;
         Ok(image)
     }
 }

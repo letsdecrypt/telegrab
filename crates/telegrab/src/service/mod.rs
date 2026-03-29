@@ -1,4 +1,4 @@
 pub mod cbz;
 pub mod doc;
-pub mod pic;
 mod helper;
+pub mod pic;

@@ -1,14 +1,14 @@
-use crate::schema::{create_schema, GallerySchema};
+use crate::schema::{GallerySchema, create_schema};
 use crate::state::AppState;
 use async_graphql::http::GraphiQLSource;
 use async_graphql_axum::{GraphQL, GraphQLSubscription};
-use axum::{
-    response::{self, IntoResponse},
-    routing::{get, post_service},
-    Router,
-};
 use axum::extract::State;
 use axum::http::header;
+use axum::{
+    Router,
+    response::{self, IntoResponse},
+    routing::{get, post_service},
+};
 
 pub fn routers(state: &AppState) -> Router<AppState> {
     let schema = create_schema(state.db_pool.clone(), state.queue_state.clone());
@@ -29,7 +29,7 @@ async fn graphiql() -> impl IntoResponse {
             .finish(),
     )
 }
-async fn export_schema(State(schema):State<GallerySchema>)-> impl IntoResponse{
+async fn export_schema(State(schema): State<GallerySchema>) -> impl IntoResponse {
     let sdl_content = schema.sdl();
     let response_headers = [
         (header::CONTENT_TYPE, "application/graphql; charset=utf-8"),

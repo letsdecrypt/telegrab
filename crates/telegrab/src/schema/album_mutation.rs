@@ -1,6 +1,6 @@
 use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
 use crate::schema::album_query::Album;
-use crate::schema::{from_global_id, ArcPgPool};
+use crate::schema::{ArcPgPool, from_global_id};
 use crate::service;
 use async_graphql::{Context, InputObject, Object, SimpleObject};
 use time::OffsetDateTime;

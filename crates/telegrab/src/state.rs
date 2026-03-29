@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
-use tokio::sync::{broadcast, Mutex, Notify, RwLock};
+use tokio::sync::{Mutex, Notify, RwLock, broadcast};
 
 #[derive(Debug, Clone)]
 pub struct QueueState {
@@ -145,7 +145,8 @@ impl QueueState {
         self.task_store.get(task_id).map(|r| r.value().clone())
     }
     pub async fn update_task(&self, updated_task: Task) -> bool {
-        self.task_store.insert(updated_task.id.clone(), updated_task.clone());
+        self.task_store
+            .insert(updated_task.id.clone(), updated_task.clone());
         if let Err(e) = self.sender.send(QueueEvent::TaskUpdated(updated_task)) {
             tracing::warn!("send task updated event failed: {:?}", e);
         }

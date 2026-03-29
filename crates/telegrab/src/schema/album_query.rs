@@ -1,20 +1,21 @@
+use crate::model::SortOrder;
 use crate::model::entity::doc::Doc;
 use crate::schema::image_query::Image;
 use crate::schema::image_query::{ImagesConnectionName, ImagesEdgeName};
 use crate::schema::{
-    from_global_id, offset_to_cursor, process_pagination, to_global_id, ArcPgPool, ConnectionFields,
-    RelayTy,
+    ArcPgPool, ConnectionFields, RelayTy, from_global_id, offset_to_cursor, process_pagination,
+    to_global_id,
 };
 use crate::service;
 use async_graphql::connection::{Connection, ConnectionNameType, Edge, EdgeNameType, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader, LruCache};
-use async_graphql::{connection, ComplexObject, Context, Object, OutputType, SimpleObject, ID};
+use async_graphql::{ComplexObject, Context, ID, Object, OutputType, SimpleObject, connection};
 use std::collections::HashMap;
 use std::sync::Arc;
 use time::OffsetDateTime;
 
 pub struct AlbumLoader {
-    pool: ArcPgPool,
+    pub pool: ArcPgPool,
 }
 impl Loader<i32> for AlbumLoader {
     type Value = Album;
@@ -143,11 +144,13 @@ impl AlbumQuery {
         Ok(album)
     }
     async fn album(&self, ctx: &Context<'_>, id: ID) -> async_graphql::Result<Album> {
-        let pool = ctx.data::<ArcPgPool>()?;
         let (_, id) = from_global_id(id.0.as_str())?;
-        let _loader = ctx.data::<DataLoader<AlbumLoader, LruCache>>(); // todo: data loader
-        let doc = service::doc::get_doc_by_id(pool, id as i32).await?;
-        let album = doc.into();
+        let loader = ctx.data::<DataLoader<AlbumLoader, LruCache>>()?;
+        let album = loader
+            .load_one(id as i32)
+            .await
+            .map_err(|e| async_graphql::Error::new(format!("{}", e)))?
+            .ok_or_else(|| async_graphql::Error::new("Album not found"))?;
         Ok(album)
     }
 
@@ -158,6 +161,7 @@ impl AlbumQuery {
         before: Option<String>,
         first: Option<i32>,
         last: Option<i32>,
+        order: Option<SortOrder>,
         title: Option<String>,
     ) -> async_graphql::Result<
         Connection<
@@ -178,10 +182,14 @@ impl AlbumQuery {
             |after, before, first, last| async move {
                 let pagination = process_pagination(after, before, first, last)
                     .map_err(|e| async_graphql::Error::new(e.message.to_string()))?;
-                let paged_docs =
-                    service::doc::get_cursor_based_pagination_docs(pool, pagination, title)
-                        .await
-                        .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+                let paged_docs = service::doc::get_cursor_based_pagination_docs(
+                    pool,
+                    pagination,
+                    order.unwrap_or(SortOrder::Asc),
+                    title,
+                )
+                .await
+                .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
                 let albums: Vec<Album> =
                     paged_docs.data.into_iter().map(|doc| doc.into()).collect();
                 let mut connection = Connection::with_additional_fields(

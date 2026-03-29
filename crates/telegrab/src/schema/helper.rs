@@ -1,13 +1,13 @@
-use std::sync::Arc;
+use crate::model::{Direction, PaginationArgs};
 use crate::schema::album_query::Album;
 use crate::schema::image_query::Image;
+use crate::state::QueueState;
 use async_graphql::{Interface, SimpleObject};
-use base64::engine::general_purpose::STANDARD as base64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as base64;
 use serde::{Deserialize, Serialize};
 use sqlx_postgres::PgPool;
-use crate::model::{Direction, PaginationArgs};
-use crate::state::QueueState;
+use std::sync::Arc;
 
 pub type ArcPgPool = Arc<PgPool>;
 pub type ArcStates = Arc<QueueState>;

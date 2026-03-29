@@ -1,14 +1,14 @@
-mod root_schema;
 mod album_mutation;
-mod helper;
 mod album_query;
-mod node_query;
+mod helper;
 mod image_query;
-mod task_query;
+mod node_query;
+mod root_schema;
 mod task_mutation;
+mod task_query;
 mod task_subscription;
 
 use helper::*;
 
-pub use root_schema::create_schema;
 pub use root_schema::GallerySchema;
+pub use root_schema::create_schema;

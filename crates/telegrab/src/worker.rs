@@ -1,3 +1,4 @@
+use crate::Result;
 use crate::configuration::Settings;
 use crate::graceful::{GracefulShutdown, TaskGuard};
 use crate::http_client::HttpClientManager;
@@ -6,7 +7,6 @@ use crate::model::entity::pic::Pic;
 use crate::model::entity::task::{QueueEvent, Task, TaskStatus, TaskType};
 use crate::service;
 use crate::state::{AppState, QueueState};
-use crate::Result;
 use notify::event::{CreateKind, RemoveKind};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use sqlx_postgres::PgPool;
@@ -295,8 +295,7 @@ impl TaskWorker {
                 }
             }
         }
-        if !service::pic::has_status_0_pics_by_doc_id(&self.db_pool, doc.id).await?
-        {
+        if !service::pic::has_status_0_pics_by_doc_id(&self.db_pool, doc.id).await? {
             progress = 1.0;
             let _ = service::doc::update_doc_status(&self.db_pool, doc.id, 2).await;
         }

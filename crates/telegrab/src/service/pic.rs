@@ -23,14 +23,11 @@ pub async fn get_pic_by_id(pool: &PgPool, id: i32) -> Result<Pic, sqlx::Error> {
     let sql = "SELECT * FROM pic WHERE id = $1";
     query_as(sql).bind(id).fetch_one(pool).await
 }
-pub async fn get_cover_pic_by_doc_id(pool: &PgPool, doc_id: i32)->Result<Pic, sqlx::Error>{
+pub async fn get_cover_pic_by_doc_id(pool: &PgPool, doc_id: i32) -> Result<Pic, sqlx::Error> {
     let sql = "SELECT * FROM pic WHERE doc_id = $1 and seq = 0 ORDER BY seq LIMIT 1";
     query_as(sql).bind(doc_id).fetch_one(pool).await
 }
-pub async fn get_pics_by_ids(
-    pool: &PgPool,
-    ids: &[i32],
-) -> Result<Vec<Pic>, sqlx::Error> {
+pub async fn get_pics_by_ids(pool: &PgPool, ids: &[i32]) -> Result<Vec<Pic>, sqlx::Error> {
     let sql = "SELECT * FROM pic WHERE id = ANY($1)";
     query_as(sql).bind(ids).fetch_all(pool).await
 }
@@ -111,11 +108,7 @@ pub async fn update_pic_status_by_id(
     status: i16,
 ) -> Result<Pic, sqlx::Error> {
     let sql = "UPDATE pic SET status = $1 WHERE id = $2 RETURNING *";
-    query_as(sql)
-        .bind(status)
-        .bind(id)
-        .fetch_one(pool)
-        .await
+    query_as(sql).bind(status).bind(id).fetch_one(pool).await
 }
 pub async fn delete_pic_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
     let sql = "DELETE FROM pic WHERE id = $1";

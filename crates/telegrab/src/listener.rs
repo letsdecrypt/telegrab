@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::configuration::{ListenerConfig, ListenerType, Settings};
 use crate::errors::Error::ListenerError;
 use crate::graceful::GracefulShutdown;
-use crate::Result;
 use axum::Router;
 use std::path::Path;
 use std::sync::Arc;

@@ -2,7 +2,7 @@ use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
 use crate::model::dto::pagination::{CursorBasedPaginationResponse, PaginationResponse};
 use crate::model::dto::pagination::{PaginationQuery, RefineSortOrder};
 use crate::model::entity::doc::{Doc, ShimDoc, TelegraphPost};
-use crate::model::{Direction, PaginationArgs};
+use crate::model::{Direction, PaginationArgs, SortOrder};
 use crate::service::helper::build_cursor_pagination;
 use convert_case::{Case, Casing};
 use sqlx::{query, query_as, query_scalar};
@@ -17,15 +17,12 @@ pub async fn get_doc_by_id(pool: &PgPool, id: i32) -> Result<Doc, sqlx::Error> {
     let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = $1";
     query_as(sql).bind(id).fetch_one(pool).await
 }
-pub async fn get_random_doc(pool:&PgPool) ->Result<Doc, sqlx::Error>{
+pub async fn get_random_doc(pool: &PgPool) -> Result<Doc, sqlx::Error> {
     let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id ORDER BY RANDOM() LIMIT 1";
     query_as(sql).fetch_one(pool).await
 }
 
-pub async fn get_docs_by_ids(
-    pool: &PgPool,
-    ids: &[i32],
-) -> Result<Vec<Doc>, sqlx::Error> {
+pub async fn get_docs_by_ids(pool: &PgPool, ids: &[i32]) -> Result<Vec<Doc>, sqlx::Error> {
     let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = ANY($1)";
     query_as(sql).bind(ids).fetch_all(pool).await
 }
@@ -239,7 +236,8 @@ pub async fn update_doc_status(pool: &PgPool, id: i32, status: i16) -> Result<u6
 pub async fn get_cursor_based_pagination_docs(
     pool: &PgPool,
     pagination_args: PaginationArgs,
-    _title:Option<String>,
+    sort_order: SortOrder,
+    _title: Option<String>,
 ) -> Result<CursorBasedPaginationResponse<Doc>, sqlx::Error> {
     let total: i64 = query_scalar("SELECT COUNT(*) FROM doc")
         .fetch_one(pool)
@@ -251,19 +249,23 @@ pub async fn get_cursor_based_pagination_docs(
     } = pagination_args;
 
     let main_sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id";
-    let order_by_clause = match direction {
-        Direction::Forward => "ORDER BY doc.id",
-        Direction::Backward => "ORDER BY doc.id DESC",
+    // Determine sort order: use explicit sort_order if provided, otherwise use direction-based default
+    let order_by_clause = match (sort_order, direction) {
+        (SortOrder::Asc, Direction::Forward) => "ORDER BY doc.id ASC",
+        (SortOrder::Asc, Direction::Backward) => "ORDER BY doc.id DESC",
+        (SortOrder::Desc, Direction::Forward) => "ORDER BY doc.id DESC",
+        (SortOrder::Desc, Direction::Backward) => "ORDER BY doc.id ASC",
     };
 
     let docs = if let Some(cursor) = cursor {
         //todo title模糊查询
         let where_clause = format!(
             "WHERE doc.id {} $1",
-            if direction == Direction::Forward {
-                " > "
-            } else {
-                " < "
+            match (sort_order, direction) {
+                (SortOrder::Asc, Direction::Forward) => " > ",
+                (SortOrder::Asc, Direction::Backward) => " < ",
+                (SortOrder::Desc, Direction::Forward) => " < ",
+                (SortOrder::Desc, Direction::Backward) => " > ",
             }
         );
         let sql = format!("{} {} {} LIMIT $2", main_sql, where_clause, order_by_clause);

@@ -91,10 +91,7 @@ impl HttpClientManager {
         let response = self
             .client
             .get(url)
-            .header(
-                "Referer",
-                "https://telegra.ph/",
-            )
+            .header("Referer", "https://telegra.ph/")
             .send()
             .await
             .map_err(|e| DownloadError::NetworkError(format!("Request failed: {}", e)))?;

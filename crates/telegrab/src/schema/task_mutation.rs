@@ -1,5 +1,5 @@
 use crate::model::entity::task::{Task, TaskStatus};
-use crate::schema::helper::{from_global_id, ArcStates, RelayTy};
+use crate::schema::helper::{ArcStates, RelayTy, from_global_id};
 use crate::schema::task_query::GTask;
 use async_graphql::{Context, InputObject, Object, Result, SimpleObject};
 

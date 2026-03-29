@@ -1,5 +1,5 @@
-use crate::model::dto::pagination::CursorBasedPaginationResponse;
 use crate::model::Direction;
+use crate::model::dto::pagination::CursorBasedPaginationResponse;
 
 pub fn build_cursor_pagination<T>(
     data: Vec<T>,

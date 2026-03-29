@@ -71,11 +71,11 @@ pub struct PaginationResponse<T> {
     pub total: u64,   // 总条数
 }
 #[derive(Debug)]
-pub struct CursorBasedPaginationResponse<T>{
+pub struct CursorBasedPaginationResponse<T> {
     pub data: Vec<T>,
     pub total: u64,
-    pub has_next:bool,
-    pub has_prev:bool,
+    pub has_next: bool,
+    pub has_prev: bool,
 }
 
 // -------------- 辅助函数 --------------
