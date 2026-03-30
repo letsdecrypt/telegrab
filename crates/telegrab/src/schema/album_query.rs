@@ -1,15 +1,15 @@
-use crate::model::SortOrder;
 use crate::model::entity::doc::Doc;
+use crate::model::SortOrder;
 use crate::schema::image_query::Image;
 use crate::schema::image_query::{ImagesConnectionName, ImagesEdgeName};
 use crate::schema::{
-    ArcPgPool, ConnectionFields, RelayTy, from_global_id, offset_to_cursor, process_pagination,
-    to_global_id,
+    from_global_id, offset_to_cursor, process_pagination, to_global_id, ArcPgPool, ConnectionFields,
+    RelayTy,
 };
 use crate::service;
 use async_graphql::connection::{Connection, ConnectionNameType, Edge, EdgeNameType, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader, LruCache};
-use async_graphql::{ComplexObject, Context, ID, Object, OutputType, SimpleObject, connection};
+use async_graphql::{connection, ComplexObject, Context, Object, OutputType, SimpleObject, ID};
 use std::collections::HashMap;
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -210,5 +210,25 @@ impl AlbumQuery {
             },
         )
         .await
+    }
+    async fn album_search(
+        &self,
+        ctx: &Context<'_>,
+        keyword: Option<String>,
+    ) -> async_graphql::Result<Vec<Album>> {
+        let pool = ctx.data::<ArcPgPool>()?;
+        
+        // 如果没有提供关键词或字符串为空，直接返回空数组
+        match keyword {
+            None => Ok(Vec::new()),
+            Some(kw) => {
+                if kw.is_empty() { return Ok(Vec::new()) };
+                let docs = service::doc::search_docs_by_keyword(pool, &kw, 10)
+                    .await
+                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+                let albums: Vec<Album> = docs.into_iter().map(|doc| doc.into()).collect();
+                Ok(albums)
+            }
+        }
     }
 }

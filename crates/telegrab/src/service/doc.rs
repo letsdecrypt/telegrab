@@ -258,7 +258,6 @@ pub async fn get_cursor_based_pagination_docs(
     };
 
     let docs = if let Some(cursor) = cursor {
-        //todo title模糊查询
         let where_clause = format!(
             "WHERE doc.id {} $1",
             match (sort_order, direction) {
@@ -284,4 +283,25 @@ pub async fn get_cursor_based_pagination_docs(
 
     let paged = build_cursor_pagination(docs, total as u64, limit, direction, cursor.is_some());
     Ok(paged)
+}
+
+pub async fn search_docs_by_keyword(
+    pool: &PgPool,
+    keyword: &str,
+    limit: i32,
+) -> Result<Vec<Doc>, sqlx::Error> {
+    let search_pattern = format!("%{}%", keyword);
+    let sql = r#"
+        SELECT doc.*, cbz.id as cbz_id 
+        FROM doc 
+        LEFT JOIN cbz ON doc.id = cbz.doc_id 
+        WHERE doc.page_title ILIKE $1 OR doc.title ILIKE $1
+        ORDER BY doc.id DESC
+        LIMIT $2
+    "#;
+    query_as(sql)
+        .bind(&search_pattern)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
 }
