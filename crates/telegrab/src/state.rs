@@ -208,7 +208,7 @@ impl QueueState {
             completed_tasks.sort_by(|a, b| {
                 let a = self.task_store.get(a).unwrap();
                 let b = self.task_store.get(b).unwrap();
-                b.created_at.cmp(&a.created_at)
+                a.created_at.cmp(&b.created_at)
             });
             let to_remove = completed_tasks.len() - keep_recent;
             for id in completed_tasks.iter().take(to_remove) {
