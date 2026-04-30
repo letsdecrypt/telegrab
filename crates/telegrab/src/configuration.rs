@@ -90,7 +90,10 @@ impl Default for HttpClientSettings {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct WorkerSettings {
-    #[serde(deserialize_with = "deserialize_number_from_string")]
+    #[serde(
+        deserialize_with = "deserialize_worker_count",
+        default = "cached_cpu_count"
+    )]
     pub count: usize,
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub max_completed_tasks: usize,
@@ -105,10 +108,64 @@ fn default_max_total_tasks() -> usize {
     1000
 }
 
+fn cached_cpu_count() -> usize {
+    static CPU_COUNT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *CPU_COUNT.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+    })
+}
+
+fn deserialize_worker_count<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct WorkerCountVisitor;
+
+    impl<'de> Visitor<'de> for WorkerCountVisitor {
+        type Value = usize;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a worker count (non-negative integer or string)")
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<usize, E> {
+            if v == 0 {
+                Ok(cached_cpu_count())
+            } else {
+                Ok(v as usize)
+            }
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<usize, E> {
+            if v <= 0 {
+                Ok(cached_cpu_count())
+            } else {
+                Ok(v as usize)
+            }
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<usize, E> {
+            let count: usize = v.parse().map_err(de::Error::custom)?;
+            if count == 0 {
+                Ok(cached_cpu_count())
+            } else {
+                Ok(count)
+            }
+        }
+    }
+
+    deserializer.deserialize_any(WorkerCountVisitor)
+}
+
 impl Default for WorkerSettings {
     fn default() -> Self {
         Self {
-            count: 4,
+            count: cached_cpu_count(),
             max_completed_tasks: 100,
             auto_cleanup_interval_secs: 60,
             max_total_tasks: 1000,
