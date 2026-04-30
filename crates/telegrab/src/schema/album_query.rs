@@ -2,6 +2,7 @@ use crate::model::entity::doc::Doc;
 use crate::model::SortOrder;
 use crate::schema::image_query::Image;
 use crate::schema::image_query::{ImagesConnectionName, ImagesEdgeName};
+use crate::schema::tag_query::Tag;
 use crate::schema::{
     from_global_id, offset_to_cursor, process_pagination, to_global_id, ArcPgPool, ConnectionFields,
     RelayTy,
@@ -14,9 +15,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use time::OffsetDateTime;
 
+/// DataLoader for batch loading albums by their IDs
 pub struct AlbumLoader {
     pub pool: ArcPgPool,
 }
+
 impl Loader<i32> for AlbumLoader {
     type Value = Album;
     type Error = Arc<sqlx::Error>;
@@ -37,16 +40,64 @@ impl Loader<i32> for AlbumLoader {
     }
 }
 
+/// DataLoader for batch loading tags for albums
+pub struct TagsForAlbumLoader {
+    pub pool: ArcPgPool,
+}
+
+impl Loader<i32> for TagsForAlbumLoader {
+    type Value = Vec<Tag>;
+    type Error = Arc<sqlx::Error>;
+
+    async fn load(&self, keys: &[i32]) -> Result<HashMap<i32, Self::Value>, Self::Error> {
+        let tags_map = service::tag::get_tags_for_albums(&self.pool, keys)
+            .await
+            .map_err(Arc::new)?;
+        let results: HashMap<i32, Vec<Tag>> = tags_map
+            .into_iter()
+            .map(|(album_id, tags)| {
+                let tag_gqls: Vec<Tag> = tags.into_iter().map(|t| t.into()).collect();
+                (album_id, tag_gqls)
+            })
+            .collect();
+        Ok(results)
+    }
+}
+
+/// Paginated search result for albums
+#[derive(Debug, Clone, SimpleObject)]
+pub struct AlbumSearchResult {
+    /// List of albums on the current page
+    pub albums: Vec<Album>,
+    /// Total number of matching records
+    pub total: i32,
+    /// Current page number (1-based)
+    pub page: i32,
+    /// Number of items per page
+    pub page_size: i32,
+    /// Total number of pages
+    pub total_pages: i32,
+}
+
+/// An album (doc) containing images
 #[derive(Debug, Clone, SimpleObject)]
 #[graphql(complex)]
 pub struct Album {
+    /// Internal database ID
     pub doc_id: i32,
+    /// Global unique ID (Relay-style)
     pub id: String,
+    /// Album title
     pub title: Option<String>,
+    /// Page title (often the original filename or source title)
     pub page_title: Option<String>,
+    /// Publication or creation date
     pub page_date: Option<OffsetDateTime>,
+    /// Album status (e.g., active, archived)
     pub status: i16,
+    /// Number of images in the album
     pub count: usize,
+    /// URL to the album source or cover
     pub url: String,
 }
 
@@ -67,13 +118,25 @@ impl From<Doc> for Album {
 
 #[ComplexObject]
 impl Album {
+    /// Tags associated with this album
+    async fn tags(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<Tag>> {
+        let loader = ctx.data::<DataLoader<TagsForAlbumLoader, LruCache>>()?;
+        let tags = loader
+            .load_one(self.doc_id)
+            .await
+            .map_err(|e| async_graphql::Error::new(format!("{}", e)))?
+            .unwrap_or_default();
+        Ok(tags)
+    }
+
+    /// Images in this album with cursor-based pagination
     async fn images(
         &self,
         ctx: &Context<'_>,
-        after: Option<String>,
-        before: Option<String>,
-        first: Option<i32>,
-        last: Option<i32>,
+        #[graphql(desc = "Cursor to fetch items after (forward pagination)")] after: Option<String>,
+        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] before: Option<String>,
+        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")] first: Option<i32>,
+        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")] last: Option<i32>,
     ) -> async_graphql::Result<
         Connection<
             String,
@@ -119,31 +182,45 @@ impl Album {
         .await
     }
 }
-struct AlbumsConnectionName;
+
+/// Connection name type for albums (Relay pagination)
+pub struct AlbumsConnectionName;
+
 impl ConnectionNameType for AlbumsConnectionName {
     fn type_name<T: OutputType>() -> String {
         "AlbumsConnection".to_string()
     }
 }
-struct AlbumsEdgeName;
+
+/// Edge name type for albums (Relay pagination)
+pub struct AlbumsEdgeName;
+
 impl EdgeNameType for AlbumsEdgeName {
     fn type_name<T: OutputType>() -> String {
         "AlbumsEdge".to_string()
     }
 }
 
+/// Root query for album-related operations
 #[derive(Default)]
 pub struct AlbumQuery;
 
 #[Object]
 impl AlbumQuery {
+    /// Get a random album
     async fn random_album(&self, ctx: &Context<'_>) -> async_graphql::Result<Album> {
         let pool = ctx.data::<ArcPgPool>()?;
         let doc = service::doc::get_random_doc(pool).await?;
         let album = doc.into();
         Ok(album)
     }
-    async fn album(&self, ctx: &Context<'_>, id: ID) -> async_graphql::Result<Album> {
+
+    /// Get a single album by its global ID
+    async fn album(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(desc = "Global ID of the album")] id: ID,
+    ) -> async_graphql::Result<Album> {
         let (_, id) = from_global_id(id.0.as_str())?;
         let loader = ctx.data::<DataLoader<AlbumLoader, LruCache>>()?;
         let album = loader
@@ -154,15 +231,16 @@ impl AlbumQuery {
         Ok(album)
     }
 
+    /// List all albums with cursor-based pagination
     async fn albums(
         &self,
         ctx: &Context<'_>,
-        after: Option<String>,
-        before: Option<String>,
-        first: Option<i32>,
-        last: Option<i32>,
-        order: Option<SortOrder>,
-        title: Option<String>,
+        #[graphql(desc = "Cursor to fetch items after (forward pagination)")] after: Option<String>,
+        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] before: Option<String>,
+        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")] first: Option<i32>,
+        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")] last: Option<i32>,
+        #[graphql(desc = "Sort order (ascending or descending)")] order: Option<SortOrder>,
+        #[graphql(desc = "Filter by title (partial match)")] title: Option<String>,
     ) -> async_graphql::Result<
         Connection<
             String,
@@ -211,23 +289,59 @@ impl AlbumQuery {
         )
         .await
     }
+
+    /// Search albums by keyword with offset-based pagination
     async fn album_search(
         &self,
         ctx: &Context<'_>,
-        keyword: Option<String>,
-    ) -> async_graphql::Result<Vec<Album>> {
+        #[graphql(desc = "Search keyword (empty or null returns empty result)")] keyword: Option<String>,
+        #[graphql(default = 1, desc = "Page number (1-based, default: 1)")] page: i32,
+        #[graphql(default = 10, desc = "Items per page (default: 10, max: 100)")] page_size: i32,
+    ) -> async_graphql::Result<AlbumSearchResult> {
         let pool = ctx.data::<ArcPgPool>()?;
-        
-        // 如果没有提供关键词或字符串为空，直接返回空数组
+
+        // Validate parameters
+        let page = if page < 1 { 1 } else { page };
+        let page_size = if page_size < 1 { 10 } else if page_size > 100 { 100 } else { page_size };
+
+        // Return empty result if no keyword provided
         match keyword {
-            None => Ok(Vec::new()),
+            None => Ok(AlbumSearchResult {
+                albums: Vec::new(),
+                total: 0,
+                page,
+                page_size,
+                total_pages: 0,
+            }),
             Some(kw) => {
-                if kw.is_empty() { return Ok(Vec::new()) };
-                let docs = service::doc::search_docs_by_keyword(pool, &kw, 10)
+                if kw.is_empty() {
+                    return Ok(AlbumSearchResult {
+                        albums: Vec::new(),
+                        total: 0,
+                        page,
+                        page_size,
+                        total_pages: 0,
+                    });
+                }
+
+                let offset = (page - 1) * page_size;
+                let docs = service::doc::search_docs_by_keyword(pool, &kw, page_size, offset)
                     .await
                     .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+                let total = service::doc::count_docs_by_keyword(pool, &kw)
+                    .await
+                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))? as i32;
+
                 let albums: Vec<Album> = docs.into_iter().map(|doc| doc.into()).collect();
-                Ok(albums)
+                let total_pages = (total + page_size - 1) / page_size;
+
+                Ok(AlbumSearchResult {
+                    albums,
+                    total,
+                    page,
+                    page_size,
+                    total_pages,
+                })
             }
         }
     }

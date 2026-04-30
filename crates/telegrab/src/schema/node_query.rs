@@ -4,11 +4,18 @@ use crate::schema::{RelayNode, RelayTy, from_global_id};
 use async_graphql::dataloader::{DataLoader, LruCache};
 use async_graphql::{Context, Object, Result};
 
+/// Root query for Relay node interface (global ID lookup)
 #[derive(Default)]
 pub struct NodeQuery;
+
 #[Object]
 impl NodeQuery {
-    async fn node(&self, ctx: &Context<'_>, id: String) -> Result<Option<RelayNode>> {
+    /// Fetch a node by its global ID (Relay spec)
+    async fn node(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(desc = "Global ID of the node")] id: String,
+    ) -> Result<Option<RelayNode>> {
         let (ty, id) = from_global_id(id.as_str())?;
         match ty {
             RelayTy::Album => {
@@ -24,7 +31,13 @@ impl NodeQuery {
             _ => Err(async_graphql::Error::new("Invalid node type")),
         }
     }
-    async fn nodes(&self, ctx: &Context<'_>, ids: Vec<String>) -> Result<Vec<Option<RelayNode>>> {
+
+    /// Fetch multiple nodes by their global IDs (batched Relay spec)
+    async fn nodes(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(desc = "List of global IDs to fetch")] ids: Vec<String>,
+    ) -> Result<Vec<Option<RelayNode>>> {
         // Parse all IDs first
         let mut parsed_ids = Vec::with_capacity(ids.len());
         for id in &ids {

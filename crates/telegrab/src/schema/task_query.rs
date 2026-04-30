@@ -3,42 +3,71 @@ use crate::schema::helper::{ArcStates, RelayTy, to_global_id};
 use async_graphql::{Context, Enum, Object, Result, SimpleObject};
 use time::OffsetDateTime;
 
+/// Type of background task
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Enum)]
 #[graphql(name = "TaskType")]
 pub enum GTaskType {
+    /// Parse album HTML page
     AlbumParse,
+    /// Download all images in an album
     AlbumDownload,
+    /// Download a single image
     ImageDownload,
+    /// Create CBZ archive for an album
     CbzArchive,
-    ScanDir,
+    /// Remove a CBZ archive
     RemoveCbz,
+    /// Scan directory for new files
+    ScanDir,
+    /// Filesystem event: CBZ file added
     FSCbzAdded,
+    /// Filesystem event: CBZ file removed
     FSCbzRemoved,
+    /// Parse all album HTML pages
     HtmlParseAll,
 }
+
+/// A background task record
 #[derive(Debug, Clone, SimpleObject)]
 #[graphql(name = "Task")]
 pub struct GTask {
+    /// Unique task ID
     pub id: String,
+    /// Type of the task
     pub task_type: GTaskType,
+    /// Global ID of the associated entity (album or image), if applicable
     pub inner_id: Option<String>,
+    /// Current status of the task
     pub status: TaskStatus,
+    /// When the task was created
     pub created_at: OffsetDateTime,
+    /// When the task started execution
     pub started_at: Option<OffsetDateTime>,
+    /// When the task completed (success or failure)
     pub completed_at: Option<OffsetDateTime>,
+    /// Result message on success
     pub result: Option<String>,
+    /// Error message on failure
     pub error: Option<String>,
 }
 
+/// Information about a currently running task
 #[derive(Debug, Clone, SimpleObject)]
 #[graphql(name = "ActiveTask")]
 pub struct GActiveTask {
+    /// Unique task ID
     pub task_id: String,
+    /// Type of the task
     pub task_type: GTaskType,
+    /// Human-readable description of what the task is doing
     pub description: String,
+    /// ID of the worker executing this task
     pub worker_id: usize,
+    /// When the task started execution
     pub started_at: OffsetDateTime,
+    /// Duration since task started, in seconds
     pub duration_secs: f64,
+    /// Progress percentage (0.0 - 1.0), if available
     pub progress: Option<f64>,
 }
 
@@ -102,11 +131,14 @@ impl From<ActiveTaskInfo> for GActiveTask {
         }
     }
 }
+
+/// Root query for task-related operations
 #[derive(Default)]
 pub struct TaskQuery;
 
 #[Object]
 impl TaskQuery {
+    /// Get all tasks (including completed)
     async fn tasks(&self, ctx: &Context<'_>) -> Result<Vec<GTask>> {
         let states = ctx.data::<ArcStates>()?;
         let tasks = states
@@ -117,6 +149,8 @@ impl TaskQuery {
             .collect();
         Ok(tasks)
     }
+
+    /// Get currently active (running) tasks
     async fn active_tasks(&self, ctx: &Context<'_>) -> Result<Vec<GActiveTask>> {
         let states = ctx.data::<ArcStates>()?;
         let tasks = states

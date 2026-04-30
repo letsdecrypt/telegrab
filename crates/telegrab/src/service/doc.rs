@@ -202,23 +202,17 @@ pub async fn update_parsed_doc(
         .fetch_one(&mut *tx)
         .await?;
 
-    let pic_sql = r#"INSERT INTO pic (doc_id, url, seq) VALUES ($1, $2, $3)"#;
-    let check_sql = r#"SELECT COUNT(*) FROM pic WHERE doc_id = $1 and url = $2"#;
-    for (i, url) in p.image_urls.iter().enumerate() {
-        let (count,): (i64,) = query_as(check_sql)
-            .bind(id)
-            .bind(url)
-            .fetch_one(pool)
-            .await?;
-        if count == 0 {
-            query(pic_sql)
-                .bind(id)
-                .bind(url)
-                .bind(i as i32)
-                .execute(&mut *tx)
-                .await?;
-        }
-    }
+    let pic_sql = r#"INSERT INTO pic (doc_id, url, seq)
+        SELECT $1, t.url, t.seq FROM UNNEST($2::text[], $3::int[]) AS t(url, seq)
+        ON CONFLICT (doc_id, url, seq) DO NOTHING"#;
+    let urls: Vec<&str> = p.image_urls.iter().map(|s| s.as_str()).collect();
+    let seqs: Vec<i32> = (0..p.image_urls.len() as i32).collect();
+    query(pic_sql)
+        .bind(id)
+        .bind(&urls)
+        .bind(&seqs)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(doc)
 }
@@ -289,19 +283,31 @@ pub async fn search_docs_by_keyword(
     pool: &PgPool,
     keyword: &str,
     limit: i32,
+    offset: i32,
 ) -> Result<Vec<Doc>, sqlx::Error> {
     let search_pattern = format!("%{}%", keyword);
     let sql = r#"
-        SELECT doc.*, cbz.id as cbz_id 
-        FROM doc 
-        LEFT JOIN cbz ON doc.id = cbz.doc_id 
+        SELECT doc.*, cbz.id as cbz_id
+        FROM doc
+        LEFT JOIN cbz ON doc.id = cbz.doc_id
         WHERE doc.page_title ILIKE $1 OR doc.title ILIKE $1
         ORDER BY doc.id DESC
-        LIMIT $2
+        LIMIT $2 OFFSET $3
     "#;
     query_as(sql)
         .bind(&search_pattern)
         .bind(limit)
+        .bind(offset)
         .fetch_all(pool)
         .await
+}
+
+pub async fn count_docs_by_keyword(pool: &PgPool, keyword: &str) -> Result<i64, sqlx::Error> {
+    let search_pattern = format!("%{}%", keyword);
+    let sql = r#"
+        SELECT COUNT(*)
+        FROM doc
+        WHERE doc.page_title ILIKE $1 OR doc.title ILIKE $1
+    "#;
+    query_scalar(sql).bind(&search_pattern).fetch_one(pool).await
 }

@@ -8,9 +8,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use time::OffsetDateTime;
 
+/// DataLoader for batch loading images by their IDs
 pub struct ImageLoader {
     pub pool: ArcPgPool,
 }
+
 impl Loader<i32> for ImageLoader {
     type Value = Image;
     type Error = Arc<sqlx::Error>;
@@ -34,12 +36,15 @@ impl Loader<i32> for ImageLoader {
     }
 }
 
+/// Connection name type for images (Relay pagination)
 pub struct ImagesConnectionName;
 impl ConnectionNameType for ImagesConnectionName {
     fn type_name<T: OutputType>() -> String {
         "ImagesConnection".to_string()
     }
 }
+
+/// Edge name type for images (Relay pagination)
 pub struct ImagesEdgeName;
 impl EdgeNameType for ImagesEdgeName {
     fn type_name<T: OutputType>() -> String {
@@ -47,12 +52,18 @@ impl EdgeNameType for ImagesEdgeName {
     }
 }
 
+/// Root query for image-related operations
 #[derive(Default)]
 pub struct ImageQuery;
 
 #[Object]
 impl ImageQuery {
-    async fn image(&self, ctx: &Context<'_>, id: String) -> Result<Image> {
+    /// Get a single image by its global ID
+    async fn image(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(desc = "Global ID of the image")] id: String,
+    ) -> Result<Image> {
         let (_, id) = from_global_id(id.as_str())?;
         let loader = ctx.data::<DataLoader<ImageLoader, LruCache>>()?;
         let image = loader
@@ -64,15 +75,24 @@ impl ImageQuery {
     }
 }
 
+/// An image belonging to an album
 #[derive(Debug, Clone, SimpleObject)]
 pub struct Image {
+    /// Internal database ID
     pub pic_id: i32,
+    /// Global unique ID (Relay-style)
     pub id: String,
+    /// Global ID of the parent album
     pub doc_id: String,
+    /// URL to the image file
     pub url: String,
+    /// Sequence number within the album
     pub seq: i32,
+    /// Image status (e.g., pending, downloaded)
     pub status: i16,
+    /// Creation timestamp
     pub created_at: OffsetDateTime,
+    /// Last update timestamp
     pub updated_at: OffsetDateTime,
 }
 

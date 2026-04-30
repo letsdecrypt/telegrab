@@ -3,38 +3,55 @@ use crate::schema::helper::{ArcStates, RelayTy, from_global_id};
 use crate::schema::task_query::GTask;
 use async_graphql::{Context, InputObject, Object, Result, SimpleObject};
 
+/// Input for enqueuing a task for an album or image
 #[derive(InputObject, Debug, Clone)]
 struct EnqueueTaskInput {
+    /// Global ID of the entity to process (album or image)
     pub id: String,
+    /// Client mutation ID for Relay support
     pub client_mutation_id: Option<String>,
 }
 
+/// Payload returned after enqueuing a task
 #[derive(SimpleObject, Debug, Clone)]
 struct EnqueueTaskPayload {
+    /// The enqueued task
     pub task: GTask,
-    pub client_mutation_id: Option<String>,
-}
-#[derive(InputObject, Debug, Clone)]
-struct CleanUpInput {
-    pub keep_recent: usize,
-    pub client_mutation_id: Option<String>,
-}
-#[derive(SimpleObject, Debug, Clone)]
-struct CleanUpPayload {
-    pub removed_count: usize,
-    pub remaining_completed: usize,
+    /// Client mutation ID echoed back for Relay support
     pub client_mutation_id: Option<String>,
 }
 
+/// Input for cleaning up completed tasks
+#[derive(InputObject, Debug, Clone)]
+struct CleanUpInput {
+    /// Number of most recent completed tasks to keep
+    pub keep_recent: usize,
+    /// Client mutation ID for Relay support
+    pub client_mutation_id: Option<String>,
+}
+
+/// Payload returned after cleaning up completed tasks
+#[derive(SimpleObject, Debug, Clone)]
+struct CleanUpPayload {
+    /// Number of tasks removed
+    pub removed_count: usize,
+    /// Number of completed tasks remaining
+    pub remaining_completed: usize,
+    /// Client mutation ID echoed back for Relay support
+    pub client_mutation_id: Option<String>,
+}
+
+/// Mutations for task management operations
 #[derive(Default)]
 pub struct TaskMutation;
 
 #[Object]
 impl TaskMutation {
+    /// Enqueue a new task for processing an album or image
     async fn enqueue_task(
         &self,
         ctx: &Context<'_>,
-        input: EnqueueTaskInput,
+        #[graphql(desc = "Input for enqueuing a task")] input: EnqueueTaskInput,
     ) -> Result<EnqueueTaskPayload> {
         let states = ctx.data::<ArcStates>()?;
         let client_mutation_id = input.client_mutation_id.clone();
@@ -73,10 +90,12 @@ impl TaskMutation {
             _ => Err("Invalid type".into()),
         }
     }
+
+    /// Remove completed tasks, keeping only the most recent ones
     async fn cleanup_completed(
         &self,
         ctx: &Context<'_>,
-        input: CleanUpInput,
+        #[graphql(desc = "Input for cleaning up completed tasks")] input: CleanUpInput,
     ) -> Result<CleanUpPayload> {
         let states = ctx.data::<ArcStates>()?;
         let client_mutation_id = input.client_mutation_id.clone();
