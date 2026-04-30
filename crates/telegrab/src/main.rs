@@ -1,4 +1,5 @@
 use std::fmt::{self, Display};
+use std::sync::Arc;
 
 use telegrab::state::AppState;
 use telegrab::{
@@ -12,7 +13,7 @@ use tokio::task::JoinError;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let configuration = get_configuration().expect("Failed to read configuration.");
+    let configuration = Arc::new(get_configuration().expect("Failed to read configuration."));
     init(&configuration.logger);
     let app_state = AppState::build(&configuration).await;
     let application_task = tokio::spawn(run_app_until_stopped(

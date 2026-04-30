@@ -1,6 +1,5 @@
 use crate::configuration::HttpClientSettings;
 use crate::model::entity::doc::TelegraphPost;
-use anyhow::Context;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
@@ -141,16 +140,12 @@ impl HttpClientManager {
         let document = Html::parse_document(&html_content);
 
         // 提取标题
-        let title_selector = Selector::parse("h1").expect("Failed to parse h1 selector");
+        let title_selector = Selector::parse("h1").expect("h1 is a valid CSS selector and cannot fail");
         let title = document
             .select(&title_selector)
             .next()
-            .context("Failed to find title")
-            .expect("Failed to find title element")
-            .text()
-            .collect::<String>()
-            .trim()
-            .to_string();
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
 
         // 提取日期
         let date_selector = Selector::parse("time").expect("Failed to parse time selector");

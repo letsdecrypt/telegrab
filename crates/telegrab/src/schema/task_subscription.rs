@@ -4,7 +4,6 @@ use crate::schema::task_query::GTask;
 use async_graphql::{Context, Enum, Interface, Result, SimpleObject, Subscription};
 use futures_util::stream::{Stream, StreamExt};
 use std::convert::Infallible;
-use std::ops::{Deref, DerefMut};
 use tokio_stream::wrappers::BroadcastStream;
 
 /// Type of task queue event
@@ -24,19 +23,6 @@ pub enum TaskEventType {
 
 impl AsRef<TaskEventType> for TaskEventType {
     fn as_ref(&self) -> &Self {
-        self
-    }
-}
-
-impl Deref for TaskEventType {
-    type Target = Self;
-    fn deref(&self) -> &Self::Target {
-        self
-    }
-}
-
-impl DerefMut for TaskEventType {
-    fn deref_mut(&mut self) -> &mut Self::Target {
         self
     }
 }

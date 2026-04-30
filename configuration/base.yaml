@@ -16,7 +16,9 @@ database:
   password: "password"
   database_name: "telegrab"
   require_ssl: false
-redis_uri: "redis://localhost:6379"
+  auto_migrate: true
+  max_connections: 10
+  min_connections: 2
 http_client:
   connect_timeout_secs: 30
   timeout_secs: 60
@@ -27,6 +29,7 @@ worker:
   count: 4
   max_completed_tasks: 100
   auto_cleanup_interval_secs: 60
+  max_total_tasks: 1000
 pic_dir: "data/pic"
 cbz_dir: "data/cbz"
 logger:

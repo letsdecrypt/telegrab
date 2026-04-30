@@ -1,4 +1,4 @@
-// todo
-// service call repository method
-// repository call database crud method
-// repository will wrap the data loaders
+pub mod cbz;
+pub mod doc;
+pub mod pic;
+pub mod tag;

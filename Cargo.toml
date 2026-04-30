@@ -8,8 +8,12 @@ edition = "2024"
 authors = ["Jonir Rings <i@jonirrings.com>"]
 
 [profile.release]
-lto = true
+lto = "thin"
 opt-level = "z"
-codegen-units = 1
 strip = true
 panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = 2
+incremental = true

@@ -20,8 +20,6 @@ pub enum Error {
     JSON(serde_json::Error),
 
     #[error(transparent)]
-    Axum(#[from] axum::http::Error),
-    #[error(transparent)]
     IO(#[from] std::io::Error),
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
@@ -36,7 +34,7 @@ pub enum Error {
     #[error(transparent)]
     InvalidStatusCode(#[from] axum::http::status::InvalidStatusCode),
     #[error(transparent)]
-    AxumError(#[from] axum::Error),
+    Axum(#[from] axum::Error),
 
     // Listener Error
     #[error("Listener Error {0}")]
@@ -56,6 +54,7 @@ pub enum Error {
     #[error("")]
     InvalidIdempotencyKey,
 
+    /// Catch-all for errors without a specific variant. Prefer adding a dedicated variant.
     #[error(transparent)]
     Any(#[from] Box<dyn std::error::Error + Send + Sync>),
 }

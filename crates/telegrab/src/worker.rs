@@ -11,10 +11,11 @@ use notify::event::{CreateKind, RemoveKind};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use sqlx_postgres::PgPool;
 use std::collections::HashSet;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use zip::write::SimpleFileOptions;
 
 #[derive(Debug, Clone)]
@@ -29,20 +30,20 @@ pub struct TaskWorker {
 }
 
 impl TaskWorker {
-    pub fn new(app_state: &AppState, configuration: Settings, worker_id: usize) -> Self {
+    pub fn new(app_state: &AppState, worker_id: usize) -> Self {
         Self {
             queue_state: app_state.queue_state.clone(),
             shutdown: app_state.shutdown.clone(),
             http_client: app_state.http_client.clone(),
             db_pool: app_state.db_pool.clone(),
-            pic_dir: configuration.pic_dir.clone(),
-            cbz_dir: configuration.cbz_dir.clone(),
+            pic_dir: app_state.pic_dir.clone(),
+            cbz_dir: app_state.cbz_dir.clone(),
             worker_id,
         }
     }
     pub async fn start(&self) {
         tracing::info!("Worker {} started", self.worker_id);
-        let mut shutdown_rx = self.shutdown.get_shutdown_rx().await;
+        let mut shutdown_rx = self.shutdown.get_shutdown_rx();
         loop {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
@@ -51,7 +52,7 @@ impl TaskWorker {
                 }
                 _ = async {
                     loop{
-                        if self.shutdown.is_shutting_down().await{
+                        if self.shutdown.is_shutting_down(){
                             tracing::info!("Worker {} is shutting down, no more waiting  for tasks", self.worker_id);
                             return;
                         }
@@ -89,7 +90,7 @@ impl TaskWorker {
         tracing::info!("Worker {} stopped", self.worker_id);
     }
     async fn process_queue_with_guard(&self) -> Result<Option<bool>, String> {
-        let _guard = match TaskGuard::new(self.shutdown.clone()).await {
+        let _guard = match TaskGuard::new(self.shutdown.clone()) {
             Some(guard) => guard,
             None => return Ok(None),
         };
@@ -225,7 +226,10 @@ impl TaskWorker {
         let pic = service::pic::get_pic_by_id(&self.db_pool, *id).await?;
         let doc = service::doc::get_doc_by_id(&self.db_pool, pic.doc_id).await?;
         let total: usize = doc.page_count.map(|n| n as usize).unwrap_or(1);
-        let last_path_segment = url_last_segment(&doc.url);
+        let last_path_segment = url_last_segment(&doc.url).unwrap_or_else(|| {
+            tracing::warn!("Failed to extract URL segment from: {}", doc.url);
+            doc.url.clone()
+        });
         let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
         ensure_dir_exists(&save_dir).await?;
         if self
@@ -276,7 +280,10 @@ impl TaskWorker {
     }
     async fn process_doc_download_task(&self, id: &i32, task_id: &str) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
-        let last_path_segment = url_last_segment(&doc.url);
+        let last_path_segment = url_last_segment(&doc.url).unwrap_or_else(|| {
+            tracing::warn!("Failed to extract URL segment from: {}", doc.url);
+            doc.url.clone()
+        });
         let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
         ensure_dir_exists(&save_dir).await?;
         let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
@@ -317,19 +324,12 @@ impl TaskWorker {
         let mut xml = String::new();
         quick_xml::se::to_writer(&mut xml, &doc_xml).expect("Failed to serialize ComicInfo Xml");
         let xml_with_decl = format!(r#"<?xml version="1.0" encoding="utf-8"?>{}"#, xml);
-        let last_path_segment = url_last_segment(&doc.url);
+        let last_path_segment = url_last_segment(&doc.url).unwrap_or_else(|| {
+            tracing::warn!("Failed to extract URL segment from: {}", doc.url);
+            doc.url.clone()
+        });
         ensure_dir_exists(&self.cbz_dir).await?;
         let pic_dir = PathBuf::from(&self.pic_dir).join(&last_path_segment);
-        let files_result = get_files_in_dir(&pic_dir);
-        if let Err(err) = files_result {
-            tracing::warn!(
-                "Worker {} get files in dir {} failed: {}",
-                self.worker_id,
-                pic_dir.display(),
-                err
-            );
-            return Ok(None);
-        }
         let cbz_filename = match (doc.writer, doc.title, doc.page_title) {
             (Some(writer), Some(title), _) => format!("[{}]{}", writer, title),
             (_, None, Some(page_title)) => page_title.to_string(),
@@ -337,68 +337,55 @@ impl TaskWorker {
         };
         let cbz_full_filename = format!("{}.cbz", cbz_filename);
         let zip_file_path = PathBuf::from(&self.cbz_dir).join(cbz_full_filename.clone());
-        let zip_file = std::fs::File::create(&zip_file_path)?;
-        let mut zip_writer = zip::ZipWriter::new(zip_file);
-        let r = zip_writer.start_file("ComicInfo.xml", SimpleFileOptions::default());
-        if let Err(err) = r {
-            tracing::warn!(
-                "Worker {} start file {} in zip failed: {}",
-                self.worker_id,
-                "ComicInfo.xml",
-                err
-            );
-            return Ok(None);
-        }
-        let r = zip_writer.write_all(xml_with_decl.as_bytes());
-        if let Err(err) = r {
-            tracing::warn!(
-                "Worker {} write file {} in zip failed: {}",
-                self.worker_id,
-                "ComicInfo.xml",
-                err
-            );
-            return Ok(None);
-        }
 
-        let files = files_result?;
-        let simple_options = SimpleFileOptions::default();
-        for file in files {
-            let filename = file.file_name().unwrap().to_string_lossy().to_string();
-            let r = zip_writer.start_file(&filename, simple_options);
-            if let Err(err) = r {
-                tracing::warn!(
-                    "Worker {} add file {} to zip failed: {}",
-                    self.worker_id,
-                    filename,
-                    err
-                );
-                return Ok(None);
+        let zip_file_path_clone = zip_file_path.clone();
+        let pic_dir_clone = pic_dir.clone();
+        let xml_with_decl_clone = xml_with_decl.clone();
+        let worker_id = self.worker_id;
+
+        let result = tokio::task::spawn_blocking(move || -> Result<()> {
+            let files = match get_files_in_dir(&pic_dir_clone) {
+                Ok(f) => f,
+                Err(err) => {
+                    tracing::warn!(
+                        "Worker {} get files in dir {} failed: {}",
+                        worker_id,
+                        pic_dir_clone.display(),
+                        err
+                    );
+                    return Ok(());
+                }
+            };
+            let zip_file = std::fs::File::create(&zip_file_path_clone)?;
+            let mut zip_writer = zip::ZipWriter::new(zip_file);
+            let simple_options = SimpleFileOptions::default();
+
+            zip_writer.start_file("ComicInfo.xml", simple_options).map_err(crate::Error::wrap)?;
+            zip_writer.write_all(xml_with_decl_clone.as_bytes())?;
+
+            for file in &files {
+                let filename = file.file_name().unwrap().to_string_lossy().to_string();
+                zip_writer.start_file(&filename, simple_options).map_err(crate::Error::wrap)?;
+                let f = std::fs::File::open(file)?;
+                let mut reader = BufReader::new(f);
+                std::io::copy(&mut reader, &mut zip_writer)?;
             }
-            let img = std::fs::read(file)?;
-            let r = zip_writer.write_all(&img);
-            if let Err(err) = r {
-                tracing::warn!(
-                    "Worker {} write file {} in zip failed: {}",
-                    self.worker_id,
-                    filename,
-                    err
-                );
-                return Ok(None);
-            }
-        }
-        let r = zip_writer.finish();
-        if let Err(err) = r {
-            tracing::warn!("Worker {} finish zip file failed: {}", self.worker_id, err);
-            return Ok(None);
+
+            zip_writer.finish().map_err(crate::Error::wrap)?;
+            Ok(())
+        })
+        .await
+        .map_err(crate::Error::msg)?;
+
+        result?;
+
+        service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
+        let cbz_path = cbz_full_filename.clone();
+        let cbz_option = service::cbz::get_cbz_by_path(&self.db_pool, cbz_path.clone()).await?;
+        if let Some(cbz) = cbz_option {
+            service::cbz::update_cbz(&self.db_pool, cbz.id, Some(*id)).await?;
         } else {
-            service::doc::update_doc_status(&self.db_pool, *id, 3).await?;
-            let cbz_path = cbz_full_filename.clone();
-            let cbz_option = service::cbz::get_cbz_by_path(&self.db_pool, cbz_path.clone()).await?;
-            if let Some(cbz) = cbz_option {
-                service::cbz::update_cbz(&self.db_pool, cbz.id, Some(*id)).await?;
-            } else {
-                service::cbz::create_cbz_with_doc_id(&self.db_pool, *id, cbz_path).await?;
-            }
+            service::cbz::create_cbz_with_doc_id(&self.db_pool, *id, cbz_path).await?;
         }
         Ok(None)
     }
@@ -470,21 +457,21 @@ impl TaskWorker {
     }
 }
 
-pub async fn start_background_workers(state: AppState, configuration: Settings) {
+pub async fn start_background_workers(state: AppState, configuration: Arc<Settings>) {
     let worker_count = configuration.worker.count;
     tracing::info!("Start {} worker(s)", worker_count);
     for worker_id in 0..worker_count {
-        let worker = TaskWorker::new(&state, configuration.clone(), worker_id);
+        let worker = TaskWorker::new(&state, worker_id);
         tokio::spawn(async move {
             worker.start().await;
         });
     }
 }
-pub async fn start_auto_cleanup_task(state: AppState, configuration: Settings) {
+pub async fn start_auto_cleanup_task(state: AppState, configuration: Arc<Settings>) {
     let cleanup_interval = configuration.worker.auto_cleanup_interval_secs;
     let max_completed_tasks = configuration.worker.max_completed_tasks;
     tokio::spawn(async move {
-        let mut shutdown_rx = state.shutdown.get_shutdown_rx().await;
+        let mut shutdown_rx = state.shutdown.get_shutdown_rx();
         tracing::info!(
             "Start Auto Cleanup Task, cleanup in every {}s, remain {} tasks at most",
             cleanup_interval,
@@ -509,24 +496,49 @@ pub async fn start_auto_cleanup_task(state: AppState, configuration: Settings) {
         }
     });
 }
-pub async fn setup_fs_monitor(state: AppState, configuration: Settings) {
-    let cbz_dir = configuration.cbz_dir;
+enum FsEvent {
+    CbzAdded(String),
+    CbzRemoved(String),
+}
+
+pub async fn setup_fs_monitor(state: AppState, configuration: Arc<Settings>) {
+    let cbz_dir = configuration.cbz_dir.clone();
     let result = ensure_dir_exists(&cbz_dir).await;
     if let Err(err) = result {
         tracing::error!("Failed to ensure cbz dir exists: {:?}", err);
         return;
     }
     state.queue_state.enqueue(Task::new_scan_dir_task()).await;
+
+    let (fs_tx, mut fs_rx) = mpsc::unbounded_channel::<FsEvent>();
+
+    {
+        let queue_state = state.queue_state.clone();
+        tokio::spawn(async move {
+            while let Some(event) = fs_rx.recv().await {
+                match event {
+                    FsEvent::CbzAdded(filename) => {
+                        let task = Task::new_fs_cbz_added_task(filename);
+                        queue_state.enqueue(task).await;
+                    }
+                    FsEvent::CbzRemoved(filename) => {
+                        let task = Task::new_fs_cbz_removed_task(filename);
+                        queue_state.enqueue(task).await;
+                    }
+                }
+            }
+        });
+    }
+
     let watch_path = Path::new(&cbz_dir);
-    let mut watcher = notify::recommended_watcher(move |evt: Result<Event, notify::Error>| {
+    let mut watcher = match notify::recommended_watcher(move |evt: Result<Event, notify::Error>| {
         if let Ok(event) = evt {
             match event.kind {
                 EventKind::Create(CreateKind::File) => {
                     for path in event.paths {
                         if path.extension() == Some("cbz".as_ref()) {
                             let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                            let task = Task::new_fs_cbz_added_task(filename);
-                            futures::executor::block_on(state.queue_state.enqueue(task));
+                            let _ = fs_tx.send(FsEvent::CbzAdded(filename));
                         }
                     }
                 }
@@ -534,19 +546,26 @@ pub async fn setup_fs_monitor(state: AppState, configuration: Settings) {
                     for path in event.paths {
                         if path.extension() == Some("cbz".as_ref()) {
                             let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                            let task = Task::new_fs_cbz_removed_task(filename);
-                            futures::executor::block_on(state.queue_state.enqueue(task));
+                            let _ = fs_tx.send(FsEvent::CbzRemoved(filename));
                         }
                     }
                 }
                 _ => {}
             }
         }
-    })
-    .expect("Failed to create watcher");
-    watcher
-        .watch(watch_path, RecursiveMode::Recursive)
-        .expect("Failed to watch dir");
+    }) {
+        Ok(w) => w,
+        Err(err) => {
+            tracing::error!("Failed to create fs watcher: {:?}", err);
+            return;
+        }
+    };
+
+    if let Err(err) = watcher.watch(watch_path, RecursiveMode::Recursive) {
+        tracing::error!("Failed to watch dir {:?}: {:?}", watch_path, err);
+        return;
+    }
+
     tracing::info!("FS monitor watching dir: {:?}", watch_path);
     let mut fs_watcher = state.fs_watcher.lock().await;
     *fs_watcher = Some(watcher);
@@ -598,18 +617,26 @@ fn get_files_in_dir<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>, std::io
 async fn scan_dir_recursive(dir_path: &Path, files: &mut HashSet<PathBuf>) {
     if !dir_path.is_dir() {
         tracing::error!("dir not exists: {:?}", dir_path);
+        return;
     }
-    let entries = std::fs::read_dir(dir_path).expect("Failed to read dir");
+    let entries = match std::fs::read_dir(dir_path) {
+        Ok(entries) => entries,
+        Err(err) => {
+            tracing::error!("Failed to read dir {:?}: {}", dir_path, err);
+            return;
+        }
+    };
 
     for entry in entries {
-        if let Err(err) = entry {
-            tracing::error!("Failed to read entry: {:?}", err);
-            continue;
-        }
-        let entry = entry.expect("Failed to read entry");
+        let entry = match entry {
+            Ok(e) => e,
+            Err(err) => {
+                tracing::error!("Failed to read entry: {}", err);
+                continue;
+            }
+        };
         let path = entry.path();
 
-        // 递归处理子目录
         if path.is_dir() {
             let fut = Box::pin(scan_dir_recursive(&path, files));
             fut.await;
@@ -618,10 +645,12 @@ async fn scan_dir_recursive(dir_path: &Path, files: &mut HashSet<PathBuf>) {
         }
     }
 }
-fn url_last_segment(url: &str) -> String {
-    let parsed_url = url::Url::parse(url).expect("Invalid url");
-    let last_path_segment = parsed_url.path_segments().unwrap().next_back().unwrap();
-    url::form_urlencoded::parse(last_path_segment.as_bytes())
-        .map(|(key, _)| key)
-        .collect()
+fn url_last_segment(url: &str) -> Option<String> {
+    let parsed_url = url::Url::parse(url).ok()?;
+    let last_path_segment = parsed_url.path_segments()?.next_back()?;
+    Some(
+        url::form_urlencoded::parse(last_path_segment.as_bytes())
+            .map(|(key, _)| key)
+            .collect(),
+    )
 }

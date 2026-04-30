@@ -37,7 +37,7 @@ pub async fn get_cbz_handler(
 }
 
 pub async fn scan_cbz_handler(State(state): State<AppState>) -> impl IntoResponse {
-    if state.shutdown.is_shutting_down().await {
+    if state.shutdown.is_shutting_down() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(EnqueueResponse {

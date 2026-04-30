@@ -1,12 +1,22 @@
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::broadcast;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GracefulShutdown {
     pub shutdown_tx: broadcast::Sender<()>,
-    pub shutdown_rx: Arc<RwLock<broadcast::Receiver<()>>>,
-    pub is_shutting_down: Arc<RwLock<bool>>,
-    pub active_tasks: Arc<RwLock<usize>>,
+    pub is_shutting_down: Arc<AtomicBool>,
+    pub active_tasks: Arc<AtomicUsize>,
+}
+
+impl Clone for GracefulShutdown {
+    fn clone(&self) -> Self {
+        Self {
+            shutdown_tx: self.shutdown_tx.clone(),
+            is_shutting_down: self.is_shutting_down.clone(),
+            active_tasks: self.active_tasks.clone(),
+        }
+    }
 }
 
 impl Default for GracefulShutdown {
@@ -17,28 +27,22 @@ impl Default for GracefulShutdown {
 
 impl GracefulShutdown {
     pub fn new() -> Self {
-        let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
+        let (shutdown_tx, _) = broadcast::channel(1);
         Self {
             shutdown_tx,
-            shutdown_rx: Arc::new(RwLock::new(shutdown_rx)),
-            is_shutting_down: Arc::new(RwLock::new(false)),
-            active_tasks: Arc::new(RwLock::new(0)),
+            is_shutting_down: Arc::new(AtomicBool::new(false)),
+            active_tasks: Arc::new(AtomicUsize::new(0)),
         }
     }
-    pub async fn get_shutdown_rx(&self) -> broadcast::Receiver<()> {
-        let rx = self.shutdown_rx.read().await;
-        rx.resubscribe()
+    pub fn get_shutdown_rx(&self) -> broadcast::Receiver<()> {
+        self.shutdown_tx.subscribe()
     }
-    pub async fn is_shutting_down(&self) -> bool {
-        let is_shutting_down = self.is_shutting_down.read().await;
-        *is_shutting_down
+    pub fn is_shutting_down(&self) -> bool {
+        self.is_shutting_down.load(Ordering::Acquire)
     }
-    pub async fn shutdown(&self) {
+    pub fn shutdown(&self) {
         tracing::info!("Shutting down gracefully...");
-        {
-            let mut shutting_down = self.is_shutting_down.write().await;
-            *shutting_down = true
-        }
+        self.is_shutting_down.store(true, Ordering::Release);
         if let Err(e) = self.shutdown_tx.send(()) {
             tracing::error!("send shutdown signal failed: {:?}", e);
         }
@@ -53,12 +57,12 @@ impl GracefulShutdown {
         let timeout_duration = Duration::from_secs(timeout_secs);
         match timeout(timeout_duration, async {
             loop {
-                let active_tasks = self.active_tasks.read().await;
-                if *active_tasks == 0 {
+                let count = self.active_tasks.load(Ordering::Acquire);
+                if count == 0 {
                     tracing::info!("All active tasks have finished.");
                     break;
                 }
-                tracing::info!("Waiting for {} active tasks to finish...", *active_tasks);
+                tracing::info!("Waiting for {} active tasks to finish...", count);
                 sleep(Duration::from_millis(500)).await;
             }
         })
@@ -74,19 +78,14 @@ impl GracefulShutdown {
             }
         }
     }
-    pub async fn task_started(&self) {
-        let mut tasks = self.active_tasks.write().await;
-        *tasks += 1;
+    pub fn task_started(&self) {
+        self.active_tasks.fetch_add(1, Ordering::AcqRel);
     }
-    pub async fn task_finished(&self) {
-        let mut tasks = self.active_tasks.write().await;
-        if *tasks > 0 {
-            *tasks -= 1;
-        }
+    pub fn task_finished(&self) {
+        self.active_tasks.fetch_sub(1, Ordering::AcqRel);
     }
-    pub async fn active_task_count(&self) -> usize {
-        let tasks = self.active_tasks.read().await;
-        *tasks
+    pub fn active_task_count(&self) -> usize {
+        self.active_tasks.load(Ordering::Acquire)
     }
 }
 
@@ -95,20 +94,17 @@ pub struct TaskGuard {
 }
 
 impl TaskGuard {
-    pub async fn new(shutdown: Arc<GracefulShutdown>) -> Option<Self> {
-        if shutdown.is_shutting_down().await {
+    pub fn new(shutdown: Arc<GracefulShutdown>) -> Option<Self> {
+        if shutdown.is_shutting_down() {
             return None;
         }
-        shutdown.task_started().await;
+        shutdown.task_started();
         Some(Self { shutdown })
     }
 }
 
 impl Drop for TaskGuard {
     fn drop(&mut self) {
-        let shutdown = self.shutdown.clone();
-        tokio::spawn(async move {
-            shutdown.task_finished().await;
-        });
+        self.shutdown.task_finished();
     }
 }

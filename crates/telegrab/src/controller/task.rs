@@ -64,7 +64,7 @@ async fn enqueue_task(
     State(state): State<AppState>,
     Json(payload): Json<EnqueueRequest>,
 ) -> impl IntoResponse {
-    if state.shutdown.is_shutting_down().await {
+    if state.shutdown.is_shutting_down() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(EnqueueResponse {
@@ -134,7 +134,7 @@ pub async fn sse_handler(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.queue_state.sender.subscribe();
-    let mut shutdown_rx = state.shutdown.get_shutdown_rx().await;
+    let mut shutdown_rx = state.shutdown.get_shutdown_rx();
     let sse_stream = StreamExt::chain(
         StreamExt::filter_map(
             BroadcastStream::new(rx).take_until(async move {

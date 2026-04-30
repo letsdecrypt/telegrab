@@ -17,16 +17,17 @@ pub struct QueueState {
     pub task_store: Arc<DashMap<String, Task>>,
     pub sender: broadcast::Sender<QueueEvent>,
     pub notify: Arc<Notify>,
+    pub max_total_tasks: usize,
 }
 
 impl Default for QueueState {
     fn default() -> Self {
-        Self::new()
+        Self::new(1000)
     }
 }
 
 impl QueueState {
-    pub fn new() -> Self {
+    pub fn new(max_total_tasks: usize) -> Self {
         let (sender, _) = broadcast::channel(1024);
         Self {
             tasks: Arc::new(RwLock::new(VecDeque::new())),
@@ -34,6 +35,7 @@ impl QueueState {
             task_store: Arc::new(DashMap::new()),
             sender,
             notify: Arc::new(Notify::new()),
+            max_total_tasks,
         }
     }
     pub async fn register_active_task(&self, task: &Task, worker_id: usize) {
@@ -198,12 +200,16 @@ impl QueueState {
     }
     pub async fn cleanup_completed_tasks(&self, keep_recent: usize) -> usize {
         let mut completed_tasks: Vec<String> = Vec::new();
+        let mut failed_tasks: Vec<String> = Vec::new();
         for r in self.task_store.iter() {
-            if let TaskStatus::Completed = r.value().status {
-                completed_tasks.push(r.key().clone());
+            match r.value().status {
+                TaskStatus::Completed => completed_tasks.push(r.key().clone()),
+                TaskStatus::Failed => failed_tasks.push(r.key().clone()),
+                _ => {}
             }
         }
         let mut removed_count = 0;
+        // Prune oldest completed tasks beyond keep_recent
         if completed_tasks.len() > keep_recent {
             completed_tasks.sort_by(|a, b| {
                 let a = self.task_store.get(a).unwrap();
@@ -214,6 +220,20 @@ impl QueueState {
             for id in completed_tasks.iter().take(to_remove) {
                 self.task_store.remove(id);
                 removed_count += 1;
+            }
+        }
+        // If still over max_total_tasks, prune oldest failed tasks
+        let excess = self.task_store.len().saturating_sub(self.max_total_tasks);
+        if excess > 0 && !failed_tasks.is_empty() {
+            failed_tasks.sort_by(|a, b| {
+                let a = self.task_store.get(a).unwrap();
+                let b = self.task_store.get(b).unwrap();
+                a.created_at.cmp(&b.created_at)
+            });
+            for id in failed_tasks.iter().take(excess) {
+                if self.task_store.remove(id).is_some() {
+                    removed_count += 1;
+                }
             }
         }
         removed_count
@@ -235,11 +255,15 @@ pub struct AppState {
 
 impl AppState {
     pub async fn build(configuration: &Settings) -> Self {
-        let queue_state = Arc::new(QueueState::new());
+        let queue_state = Arc::new(QueueState::new(configuration.worker.max_total_tasks));
         let db_pool = Arc::new(
             PgPoolOptions::new()
-                .acquire_timeout(Duration::from_secs(2))
-                .connect_lazy_with(configuration.database.with_db()),
+                .acquire_timeout(Duration::from_secs(5))
+                .max_connections(configuration.database.max_connections)
+                .min_connections(configuration.database.min_connections)
+                .connect_with(configuration.database.with_db())
+                .await
+                .expect("Failed to connect to database"),
         );
         let shutdown = Arc::new(GracefulShutdown::new());
 
@@ -247,12 +271,11 @@ impl AppState {
             configuration.http_client.clone(),
         )));
 
-        {
-            //db migration
-            /*sqlx::migrate!()
-            .run(&*db_pool)
-            .await
-            .expect("Could not run database migrations.");*/
+        if configuration.database.auto_migrate {
+            sqlx::migrate!("../../migrations")
+                .run(&*db_pool)
+                .await
+                .expect("Could not run database migrations.");
         }
 
         Self {

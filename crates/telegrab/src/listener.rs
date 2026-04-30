@@ -17,7 +17,7 @@ pub type ListenerHandle = JoinHandle<Result<()>>;
 
 pub async fn start_listeners(
     app: Router,
-    configuration: &Settings,
+    configuration: &Arc<Settings>,
     shutdown: Arc<GracefulShutdown>,
 ) -> Result<Vec<ListenerHandle>> {
     let mut handles = Vec::new();
@@ -84,7 +84,7 @@ pub async fn start_tcp_listener(
     })?;
 
     tracing::info!("[Listener] Starting TCP server on {}...", local_address);
-    let mut shutdown_rx = shutdown.get_shutdown_rx().await;
+    let mut shutdown_rx = shutdown.get_shutdown_rx();
     let join_handle = tokio::spawn(async move {
         let config_address_graceful = config_address.clone();
         let config_address_stop = config_address.clone();
@@ -172,7 +172,7 @@ pub async fn start_uds_listener(
         }
     };
     tracing::info!("[Listener] Starting UDS server on {}...", &address);
-    let mut shutdown_rx = shutdown.get_shutdown_rx().await;
+    let mut shutdown_rx = shutdown.get_shutdown_rx();
     let join_handle = tokio::spawn(async move {
         let config_address_graceful = address.clone();
         let config_address_stop = address.clone();
@@ -237,7 +237,7 @@ async fn start_listen_on_fd(
                 ))
             })?;
             tracing::info!("[Listener] Starting FD TCP server on {}...", &address);
-            let mut shutdown_rx = shutdown.get_shutdown_rx().await;
+            let mut shutdown_rx = shutdown.get_shutdown_rx();
             let join_handle = tokio::spawn(async move {
                 let server = axum::serve(l, app_clone);
                 let graceful = server.with_graceful_shutdown(async move {
@@ -276,7 +276,7 @@ async fn start_listen_on_fd(
                 ))
             })?;
             tracing::info!("[Listener] Starting FD UDS server on {:?}...", &address);
-            let mut shutdown_rx = shutdown.get_shutdown_rx().await;
+            let mut shutdown_rx = shutdown.get_shutdown_rx();
             let join_handle = tokio::spawn(async move {
                 let server = axum::serve(l, app_clone);
                 let graceful = server.with_graceful_shutdown(async move {

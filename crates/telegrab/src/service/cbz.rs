@@ -1,12 +1,11 @@
 use crate::model::dto::pagination::{PaginationQuery, PaginationResponse, RefineSortOrder};
 use crate::model::entity::cbz::Cbz;
+use crate::repository;
 use convert_case::{Case, Casing};
-use sqlx::{query, query_as};
 use sqlx_postgres::PgPool;
 
 pub async fn create_cbz(db_pool: &PgPool, path: String) -> Result<Cbz, sqlx::Error> {
-    let sql = "INSERT INTO cbz (path) VALUES ($1) RETURNING *";
-    query_as(sql).bind(path).fetch_one(db_pool).await
+    repository::cbz::create(db_pool, path).await
 }
 
 pub async fn create_cbz_with_doc_id(
@@ -14,27 +13,19 @@ pub async fn create_cbz_with_doc_id(
     doc_id: i32,
     path: String,
 ) -> Result<Cbz, sqlx::Error> {
-    let sql = "INSERT INTO cbz (doc_id, path) VALUES ($1, $2) RETURNING *";
-    query_as(sql)
-        .bind(doc_id)
-        .bind(path)
-        .fetch_one(db_pool)
-        .await
+    repository::cbz::create_with_doc_id(db_pool, doc_id, path).await
 }
 
 pub async fn get_cbz_by_id(db_pool: &PgPool, id: i32) -> Result<Cbz, sqlx::Error> {
-    let sql = "SELECT * FROM cbz WHERE id = $1";
-    query_as(sql).bind(id).fetch_one(db_pool).await
+    repository::cbz::find_by_id(db_pool, id).await
 }
 
 pub async fn get_cbz_by_doc_id(db_pool: &PgPool, doc_id: i32) -> Result<Option<Cbz>, sqlx::Error> {
-    let sql = "SELECT * FROM cbz WHERE doc_id = $1";
-    query_as(sql).bind(doc_id).fetch_optional(db_pool).await
+    repository::cbz::find_by_doc_id(db_pool, doc_id).await
 }
 
 pub async fn get_cbz_by_path(db_pool: &PgPool, path: String) -> Result<Option<Cbz>, sqlx::Error> {
-    let sql = "SELECT * FROM cbz WHERE path = $1";
-    query_as(sql).bind(path).fetch_optional(db_pool).await
+    repository::cbz::find_by_path(db_pool, path).await
 }
 
 pub async fn get_cbz_page(
@@ -54,29 +45,17 @@ pub async fn get_cbz_page(
         if !clauses.is_empty() {
             format!(" ORDER BY {}", clauses.join(", "))
         } else {
-            // 默认按id降序排序
             " ORDER BY cbz.id DESC".to_string()
         }
     } else {
-        // 默认按id降序排序
         " ORDER BY cbz.id DESC".to_string()
     };
 
-    // 构建分页子句
     let pagination_clause = format!(" LIMIT {} OFFSET {}", query.limit(), query.offset());
 
-    // 执行查询获取总数
-    let (total,): (i64,) = query_as("SELECT COUNT(*) FROM cbz").fetch_one(pool).await?;
+    let total = repository::cbz::count(pool).await?;
+    let cbz_v = repository::cbz::find_page(pool, &sort_clause, &pagination_clause).await?;
 
-    // 执行查询获取数据
-    let cbz_v = query_as(&format!(
-        "SELECT * FROM cbz{}{}",
-        sort_clause, pagination_clause
-    ))
-    .fetch_all(pool)
-    .await?;
-
-    // 构建并返回分页响应
     Ok(PaginationResponse {
         data: cbz_v,
         total: total as u64,
@@ -88,8 +67,7 @@ pub async fn update_cbz(
     id: i32,
     doc_id: Option<i32>,
 ) -> Result<Cbz, sqlx::Error> {
-    let sql = "UPDATE cbz SET doc_id = $1 WHERE id = $2 RETURNING *";
-    query_as(sql).bind(doc_id).bind(id).fetch_one(db_pool).await
+    repository::cbz::update(db_pool, id, doc_id).await
 }
 
 pub async fn update_cbz_doc_id_with_path(
@@ -97,20 +75,9 @@ pub async fn update_cbz_doc_id_with_path(
     doc_id: i32,
     path: String,
 ) -> Result<u64, sqlx::Error> {
-    let sql = "UPDATE cbz SET doc_id = $1 WHERE path = $2";
-    query(sql)
-        .bind(doc_id)
-        .bind(path)
-        .execute(db_pool)
-        .await
-        .map(|r| r.rows_affected())
+    repository::cbz::update_doc_id_by_path(db_pool, doc_id, path).await
 }
 
 pub async fn remove_cbz_by_id(db_pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
-    let sql = "DELETE FROM cbz WHERE id = $1";
-    query(sql)
-        .bind(id)
-        .execute(db_pool)
-        .await
-        .map(|r| r.rows_affected())
+    repository::cbz::delete_by_id(db_pool, id).await
 }

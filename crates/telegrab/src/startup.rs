@@ -9,6 +9,7 @@ use crate::{
     state::AppState,
 };
 use axum::{Router, http, routing::get};
+use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 
 pub fn app(state: AppState) -> Router {
@@ -23,7 +24,7 @@ pub fn app(state: AppState) -> Router {
         .with_state(state)
 }
 
-pub async fn run_app_until_stopped(state: AppState, configuration: Settings) -> Result<()> {
+pub async fn run_app_until_stopped(state: AppState, configuration: Arc<Settings>) -> Result<()> {
     let app = register_layer(app(state.clone()), &configuration).await;
 
     let listener_handles =

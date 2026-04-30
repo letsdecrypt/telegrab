@@ -1,182 +1,116 @@
 use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
 use crate::model::dto::pagination::{CursorBasedPaginationResponse, PaginationResponse};
 use crate::model::dto::pagination::{PaginationQuery, RefineSortOrder};
-use crate::model::entity::doc::{Doc, ShimDoc, TelegraphPost};
+use crate::model::entity::doc::{Doc, TelegraphPost};
 use crate::model::{Direction, PaginationArgs, SortOrder};
+use crate::repository;
 use crate::service::helper::build_cursor_pagination;
-use convert_case::{Case, Casing};
-use sqlx::{query, query_as, query_scalar};
 use sqlx_postgres::PgPool;
 use time::OffsetDateTime;
 
+#[derive(Debug, Clone, Copy)]
+enum DocSortColumn {
+    Id,
+    Url,
+    PageTitle,
+    Title,
+    Status,
+    PageCount,
+    CreatedAt,
+    UpdatedAt,
+}
+
+impl DocSortColumn {
+    fn column_name(&self) -> &'static str {
+        match self {
+            Self::Id => "doc.id",
+            Self::Url => "doc.url",
+            Self::PageTitle => "doc.page_title",
+            Self::Title => "doc.title",
+            Self::Status => "doc.status",
+            Self::PageCount => "doc.page_count",
+            Self::CreatedAt => "doc.created_at",
+            Self::UpdatedAt => "doc.updated_at",
+        }
+    }
+
+    fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().replace('_', "") {
+            s if s == "id" => Some(Self::Id),
+            s if s == "url" => Some(Self::Url),
+            s if s == "pagetitle" => Some(Self::PageTitle),
+            s if s == "title" => Some(Self::Title),
+            s if s == "status" => Some(Self::Status),
+            s if s == "pagecount" => Some(Self::PageCount),
+            s if s == "createdat" => Some(Self::CreatedAt),
+            s if s == "updatedat" => Some(Self::UpdatedAt),
+            _ => None,
+        }
+    }
+}
+
 pub async fn create_doc(pool: &PgPool, req: CreateDocReq) -> Result<Doc, sqlx::Error> {
-    let sql = "INSERT INTO doc (url) VALUES ($1) RETURNING *, (SELECT id FROM cbz WHERE doc_id = doc.id) AS cbz_id";
-    query_as(sql).bind(req.url).fetch_one(pool).await
+    repository::doc::create(pool, &req.url).await
 }
+
 pub async fn get_doc_by_id(pool: &PgPool, id: i32) -> Result<Doc, sqlx::Error> {
-    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = $1";
-    query_as(sql).bind(id).fetch_one(pool).await
+    repository::doc::find_by_id(pool, id).await
 }
+
 pub async fn get_random_doc(pool: &PgPool) -> Result<Doc, sqlx::Error> {
-    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id ORDER BY RANDOM() LIMIT 1";
-    query_as(sql).fetch_one(pool).await
+    repository::doc::find_random(pool).await
 }
 
 pub async fn get_docs_by_ids(pool: &PgPool, ids: &[i32]) -> Result<Vec<Doc>, sqlx::Error> {
-    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE doc.id = ANY($1)";
-    query_as(sql).bind(ids).fetch_all(pool).await
+    repository::doc::find_by_ids(pool, ids).await
 }
 
 pub async fn get_docs(
     pool: &PgPool,
     query: &PaginationQuery,
 ) -> Result<PaginationResponse<Doc>, sqlx::Error> {
-    // 构建排序子句
     let sort_clause = if let Some(sort) = &query.sort {
-        let mut clauses = Vec::new();
-        let snake_sort = sort.to_case(Case::Snake);
-        if let Some(order) = &query.order {
-            let order = match &order {
-                RefineSortOrder::Asc => "ASC",
-                RefineSortOrder::Desc => "DESC",
-            };
-            clauses.push(format!("{}.{} {}", "doc", snake_sort, order));
-        }
-        if !clauses.is_empty() {
-            format!(" ORDER BY {}", clauses.join(", "))
-        } else {
-            // 默认按id降序排序
-            " ORDER BY doc.id DESC".to_string()
+        let order = match &query.order {
+            Some(RefineSortOrder::Asc) => "ASC",
+            Some(RefineSortOrder::Desc) => "DESC",
+            None => "DESC",
+        };
+        match DocSortColumn::from_str(sort) {
+            Some(col) => format!(" ORDER BY {} {}", col.column_name(), order),
+            None => {
+                tracing::warn!("Invalid sort parameter ignored: {}", sort);
+                " ORDER BY doc.id DESC".to_string()
+            }
         }
     } else {
-        // 默认按id降序排序
         " ORDER BY doc.id DESC".to_string()
     };
 
-    // 构建分页子句
     let pagination_clause = format!(" LIMIT {} OFFSET {}", query.limit(), query.offset());
 
-    // 执行查询获取总数
-    let (total,): (i64,) = query_as("SELECT COUNT(*) FROM doc").fetch_one(pool).await?;
+    let total = repository::doc::count(pool).await?;
+    let docs = repository::doc::find_page(pool, &sort_clause, &pagination_clause).await?;
 
-    // 执行查询获取数据
-    let docs = query_as(&format!(
-        "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id{}{}",
-        sort_clause, pagination_clause
-    ))
-    .fetch_all(pool)
-    .await?;
-
-    // 构建并返回分页响应
     Ok(PaginationResponse {
         data: docs,
         total: total as u64,
     })
 }
 
-pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<ShimDoc>, sqlx::Error> {
-    let sql = "SELECT doc.id, cbz.id as cbz_id, url, page_title, title FROM doc left join cbz on doc.id = cbz.doc_id WHERE status > 0 ORDER BY doc.id";
-    query_as::<_, ShimDoc>(sql).fetch_all(pool).await
+pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<crate::model::entity::doc::ShimDoc>, sqlx::Error> {
+    repository::doc::find_parsed(pool).await
 }
+
 pub async fn get_unparsed_docs(pool: &PgPool) -> Result<Vec<Doc>, sqlx::Error> {
-    let sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id WHERE status = 0";
-    query_as(sql).fetch_all(pool).await
+    repository::doc::find_unparsed(pool).await
 }
 
 pub async fn delete_doc_by_id(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
-    let sql = "DELETE FROM doc WHERE id = $1";
-    query(sql)
-        .bind(id)
-        .execute(pool)
-        .await
-        .map(|r| r.rows_affected())
+    repository::doc::delete_by_id(pool, id).await
 }
 
 pub async fn update_doc(pool: &PgPool, id: i32, req: UpdateDocReq) -> Result<Doc, sqlx::Error> {
-    let sql = r#"UPDATE doc
-    SET page_title = $1,
-        page_date = $2,
-        title = $3,
-        series = $4,
-        number = $5,
-        count = $6,
-        volume = $7,
-        summary = $8,
-        notes = $9,
-        year = $10,
-        month = $11,
-        day = $12,
-        writer = $13,
-        penciller = $14,
-        inker = $15,
-        colorist = $16,
-        letterer = $17,
-        cover_artist = $18,
-        editor = $19,
-        publisher = $20,
-        imprint = $21,
-        genre = $22,
-        tags = $23,
-        web = $24,
-        page_count = $25,
-        language = $26,
-        format = $27,
-        black_and_white = $28,
-        characters = $29,
-        teams = $30,
-        locations = $31,
-        scan_information = $32,
-        story_arc = $33,
-        series_group = $34,
-        age_rating = $35,
-        community_rating = $36,
-        critical_rating = $37,
-        updated_at = now()
-    WHERE id = $38
-    RETURNING *, (SELECT id FROM cbz WHERE doc_id = doc.id) AS cbz_id
-    "#;
-
-    query_as(sql)
-        .bind(req.page_title)
-        .bind(req.page_date)
-        .bind(req.title)
-        .bind(req.series)
-        .bind(req.number)
-        .bind(req.count)
-        .bind(req.volume)
-        .bind(req.summary)
-        .bind(req.notes)
-        .bind(req.year)
-        .bind(req.month)
-        .bind(req.day)
-        .bind(req.writer)
-        .bind(req.penciller)
-        .bind(req.inker)
-        .bind(req.colorist)
-        .bind(req.letterer)
-        .bind(req.cover_artist)
-        .bind(req.editor)
-        .bind(req.publisher)
-        .bind(req.imprint)
-        .bind(req.genre)
-        .bind(req.tags)
-        .bind(req.web)
-        .bind(req.page_count)
-        .bind(req.language)
-        .bind(req.format)
-        .bind(req.black_and_white)
-        .bind(req.characters)
-        .bind(req.teams)
-        .bind(req.locations)
-        .bind(req.scan_information)
-        .bind(req.story_arc)
-        .bind(req.series_group)
-        .bind(req.age_rating)
-        .bind(req.community_rating)
-        .bind(req.critical_rating)
-        .bind(id)
-        .fetch_one(pool)
-        .await
+    repository::doc::update(pool, id, req).await
 }
 
 pub async fn update_parsed_doc(
@@ -184,7 +118,6 @@ pub async fn update_parsed_doc(
     id: i32,
     p: TelegraphPost,
 ) -> Result<Doc, sqlx::Error> {
-    let mut tx = pool.begin().await?;
     let parsed_date = p.date.as_deref().and_then(|date_str| {
         OffsetDateTime::parse(
             date_str,
@@ -192,39 +125,24 @@ pub async fn update_parsed_doc(
         )
         .ok()
     });
-    let doc_sql = r#"UPDATE doc SET page_title = $1, page_date = $2, page_count = $3, web = $4, status = 1 WHERE id = $5 RETURNING *, (SELECT id FROM cbz WHERE doc_id = $5) AS cbz_id"#;
-    let doc = query_as(doc_sql)
-        .bind(p.title)
-        .bind(parsed_date)
-        .bind(p.image_urls.len() as i16)
-        .bind(p.url.clone())
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-    let pic_sql = r#"INSERT INTO pic (doc_id, url, seq)
-        SELECT $1, t.url, t.seq FROM UNNEST($2::text[], $3::int[]) AS t(url, seq)
-        ON CONFLICT (doc_id, url, seq) DO NOTHING"#;
     let urls: Vec<&str> = p.image_urls.iter().map(|s| s.as_str()).collect();
     let seqs: Vec<i32> = (0..p.image_urls.len() as i32).collect();
-    query(pic_sql)
-        .bind(id)
-        .bind(&urls)
-        .bind(&seqs)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(doc)
+
+    repository::doc::update_parsed(
+        pool,
+        id,
+        p.title,
+        parsed_date,
+        p.image_urls.len() as i16,
+        p.url,
+        &urls,
+        &seqs,
+    )
+    .await
 }
 
 pub async fn update_doc_status(pool: &PgPool, id: i32, status: i16) -> Result<u64, sqlx::Error> {
-    let sql = "UPDATE doc SET status = $1 WHERE id = $2";
-    query(sql)
-        .bind(status)
-        .bind(id)
-        .execute(pool)
-        .await
-        .map(|r| r.rows_affected())
+    repository::doc::update_status(pool, id, status).await
 }
 
 pub async fn get_cursor_based_pagination_docs(
@@ -233,18 +151,14 @@ pub async fn get_cursor_based_pagination_docs(
     sort_order: SortOrder,
     _title: Option<String>,
 ) -> Result<CursorBasedPaginationResponse<Doc>, sqlx::Error> {
-    let total: i64 = query_scalar("SELECT COUNT(*) FROM doc")
-        .fetch_one(pool)
-        .await?;
+    let total = repository::doc::count(pool).await?;
     let PaginationArgs {
         limit,
         cursor,
         direction,
     } = pagination_args;
 
-    let main_sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id";
-    // Determine sort order: use explicit sort_order if provided, otherwise use direction-based default
-    let order_by_clause = match (sort_order, direction) {
+    let order_by = match (sort_order, direction) {
         (SortOrder::Asc, Direction::Forward) => "ORDER BY doc.id ASC",
         (SortOrder::Asc, Direction::Backward) => "ORDER BY doc.id DESC",
         (SortOrder::Desc, Direction::Forward) => "ORDER BY doc.id DESC",
@@ -252,27 +166,15 @@ pub async fn get_cursor_based_pagination_docs(
     };
 
     let docs = if let Some(cursor) = cursor {
-        let where_clause = format!(
-            "WHERE doc.id {} $1",
-            match (sort_order, direction) {
-                (SortOrder::Asc, Direction::Forward) => " > ",
-                (SortOrder::Asc, Direction::Backward) => " < ",
-                (SortOrder::Desc, Direction::Forward) => " < ",
-                (SortOrder::Desc, Direction::Backward) => " > ",
-            }
-        );
-        let sql = format!("{} {} {} LIMIT $2", main_sql, where_clause, order_by_clause);
-        query_as(&sql)
-            .bind(cursor)
-            .bind(limit as i64 + 1) // 多查一条用来判断是否有下一页
-            .fetch_all(pool)
-            .await?
+        let where_op = match (sort_order, direction) {
+            (SortOrder::Asc, Direction::Forward) => " > ",
+            (SortOrder::Asc, Direction::Backward) => " < ",
+            (SortOrder::Desc, Direction::Forward) => " < ",
+            (SortOrder::Desc, Direction::Backward) => " > ",
+        };
+        repository::doc::find_cursor_with_cursor(pool, where_op, cursor, limit as i64 + 1, order_by).await?
     } else {
-        let sql = format!("{} {} LIMIT $1", main_sql, order_by_clause);
-        query_as(&sql)
-            .bind(limit as i64 + 1) // 多查一条用来判断是否有下一页
-            .fetch_all(pool)
-            .await?
+        repository::doc::find_cursor_no_cursor(pool, limit as i64 + 1, order_by).await?
     };
 
     let paged = build_cursor_pagination(docs, total as u64, limit, direction, cursor.is_some());
@@ -285,29 +187,11 @@ pub async fn search_docs_by_keyword(
     limit: i32,
     offset: i32,
 ) -> Result<Vec<Doc>, sqlx::Error> {
-    let search_pattern = format!("%{}%", keyword);
-    let sql = r#"
-        SELECT doc.*, cbz.id as cbz_id
-        FROM doc
-        LEFT JOIN cbz ON doc.id = cbz.doc_id
-        WHERE doc.page_title ILIKE $1 OR doc.title ILIKE $1
-        ORDER BY doc.id DESC
-        LIMIT $2 OFFSET $3
-    "#;
-    query_as(sql)
-        .bind(&search_pattern)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await
+    let pattern = format!("%{}%", keyword);
+    repository::doc::search_by_keyword(pool, &pattern, limit, offset).await
 }
 
 pub async fn count_docs_by_keyword(pool: &PgPool, keyword: &str) -> Result<i64, sqlx::Error> {
-    let search_pattern = format!("%{}%", keyword);
-    let sql = r#"
-        SELECT COUNT(*)
-        FROM doc
-        WHERE doc.page_title ILIKE $1 OR doc.title ILIKE $1
-    "#;
-    query_scalar(sql).bind(&search_pattern).fetch_one(pool).await
+    let pattern = format!("%{}%", keyword);
+    repository::doc::count_by_keyword(pool, &pattern).await
 }

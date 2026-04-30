@@ -63,7 +63,6 @@ pub struct Settings {
     pub http_client: HttpClientSettings,
     pub worker: WorkerSettings,
     pub logger: LoggerSettings,
-    pub redis_uri: SecretString,
     pub pic_dir: String,
     pub cbz_dir: String,
 }
@@ -97,6 +96,13 @@ pub struct WorkerSettings {
     pub max_completed_tasks: usize,
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub auto_cleanup_interval_secs: u64,
+    #[serde(default = "default_max_total_tasks")]
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub max_total_tasks: usize,
+}
+
+fn default_max_total_tasks() -> usize {
+    1000
 }
 
 impl Default for WorkerSettings {
@@ -105,6 +111,7 @@ impl Default for WorkerSettings {
             count: 4,
             max_completed_tasks: 100,
             auto_cleanup_interval_secs: 60,
+            max_total_tasks: 1000,
         }
     }
 }
@@ -155,6 +162,24 @@ pub struct DatabaseSettings {
     pub host: String,
     pub database_name: String,
     pub require_ssl: bool,
+    #[serde(default = "default_auto_migrate")]
+    pub auto_migrate: bool,
+    #[serde(default = "default_max_connections")]
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub max_connections: u32,
+    #[serde(default = "default_min_connections")]
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub min_connections: u32,
+}
+
+fn default_auto_migrate() -> bool {
+    true
+}
+fn default_max_connections() -> u32 {
+    10
+}
+fn default_min_connections() -> u32 {
+    2
 }
 
 impl DatabaseSettings {

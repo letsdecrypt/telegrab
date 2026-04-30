@@ -42,7 +42,7 @@ async fn create_doc_handler(
 }
 
 async fn parse_all_doc_handler(State(state): State<AppState>) -> impl IntoResponse {
-    if state.shutdown.is_shutting_down().await {
+    if state.shutdown.is_shutting_down() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(EnqueueResponse {

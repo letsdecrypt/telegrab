@@ -26,7 +26,6 @@ colored = "3.1.1"
 config = { version = "0.15.19", default-features = false, features = ["yaml"] }
 convert_case = "0.11"
 dashmap = "6"
-futures = "0.3"
 futures-util = { version = "0.3", features = ["sink", "std"] }
 hyper = "1.8.1"
 notify = "8.2.0"
@@ -39,7 +38,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde-aux = "4.7.0"
 serde_json = "1.0.149"
 serde_variant = "0.1.3"
-sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "macros"] }
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "macros", "migrate"] }
 sqlx-postgres = { version = "0.8", features = ["uuid", "time"] }
 thiserror = "2.0.18"
 time = { version = "0.3", features = ["serde-human-readable"] }

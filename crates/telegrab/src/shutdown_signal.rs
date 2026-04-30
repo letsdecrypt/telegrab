@@ -27,7 +27,7 @@ pub async fn shutdown_signal(state: AppState) {
             tracing::info!("Gracefully exited with terminate");
         },
     }
-    state.shutdown.shutdown().await;
+    state.shutdown.shutdown();
     tracing::info!("Clear pending tasks");
     let cleared = state.queue_state.clear().await;
     if !cleared.is_empty() {
