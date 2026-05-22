@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::model::dto::AffectedRows;
 use crate::model::dto::pagination::PaginationQuery;
-use crate::model::dto::pic::MutatePicReq;
+use crate::model::dto::pic::{MutatePicReq, PicQuery};
 use crate::state::AppState;
 use crate::{format, service};
 use axum::extract::{Path, Query, State};
@@ -9,7 +9,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
-use serde::Deserialize;
 
 pub fn routers() -> Router<AppState> {
     Router::new()
@@ -20,11 +19,6 @@ pub fn routers() -> Router<AppState> {
         .route("/{id}", delete(delete_pic_handler))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PicQuery {
-    pub doc_id: Option<i32>,
-}
 async fn get_pics_handler(
     State(state): State<AppState>,
     Query(query): Query<PaginationQuery>,

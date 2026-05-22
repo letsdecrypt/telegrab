@@ -1,0 +1,19 @@
+[package]
+name = "telegrabber"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Standalone CLI to fetch telegra.ph pages and archive as CBZ"
+
+[[bin]]
+name = "telegrabber"
+path = "src/main.rs"
+
+[dependencies]
+telegrab-core = { path = "../telegrab-core" }
+telegrab-model = { path = "../telegrab-model" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+anyhow = "1"
+time = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

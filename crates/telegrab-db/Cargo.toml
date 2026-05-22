@@ -1,0 +1,15 @@
+[package]
+name = "telegrab-db"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Database access layer for telegrab"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+telegrab-model = { path = "../telegrab-model" }
+sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "macros"] }
+sqlx-postgres = { version = "0.9", features = ["uuid", "time"] }
+time = { version = "0.3" }

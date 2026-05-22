@@ -1,13 +1,13 @@
-use crate::controller::pic::PicQuery;
-use crate::model::dto::pagination::{CursorBasedPaginationResponse, RefineSortOrder};
-use crate::model::dto::pagination::{PaginationQuery, PaginationResponse};
-use crate::model::dto::pic::MutatePicReq;
-use crate::model::entity::pic::Pic;
-use crate::model::{Direction, PaginationArgs};
-use crate::repository;
 use crate::service::helper::build_cursor_pagination;
 use convert_case::{Case, Casing};
 use sqlx_postgres::PgPool;
+use telegrab_db as repository;
+use telegrab_model::dto::pagination::{CursorBasedPaginationResponse, RefineSortOrder};
+use telegrab_model::dto::pagination::{PaginationQuery, PaginationResponse};
+use telegrab_model::dto::pic::MutatePicReq;
+use telegrab_model::dto::pic::PicQuery;
+use telegrab_model::entity::pic::Pic;
+use telegrab_model::{Direction, PaginationArgs};
 
 pub async fn create_pic(pool: &PgPool, params: MutatePicReq) -> Result<Pic, sqlx::Error> {
     repository::pic::create(pool, params.url, params.doc_id, params.seq).await
@@ -58,10 +58,11 @@ pub async fn get_pics(
     let pagination_clause = format!(" LIMIT {} OFFSET {}", query.limit(), query.offset());
 
     let total = repository::pic::count(pool, &filter_clause).await?;
-    let pics = repository::pic::find_page(pool, &filter_clause, &sort_clause, &pagination_clause).await?;
+    let pics =
+        repository::pic::find_page(pool, &filter_clause, &sort_clause, &pagination_clause).await?;
 
     Ok(PaginationResponse {
-         data: pics,
+        data: pics,
         total: total as u64,
     })
 }
@@ -117,7 +118,15 @@ pub async fn get_cursor_based_pagination_pics(
         } else {
             " < "
         };
-        repository::pic::find_cursor_with_cursor(pool, doc_id, where_op, cursor, limit as i64 + 1, order_by).await?
+        repository::pic::find_cursor_with_cursor(
+            pool,
+            doc_id,
+            where_op,
+            cursor,
+            limit as i64 + 1,
+            order_by,
+        )
+        .await?
     } else {
         repository::pic::find_cursor_no_cursor(pool, doc_id, limit as i64 + 1, order_by).await?
     };

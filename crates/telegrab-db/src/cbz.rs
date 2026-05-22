@@ -1,6 +1,6 @@
-use crate::model::entity::cbz::Cbz;
-use sqlx::{query, query_as, query_scalar, AssertSqlSafe};
+use sqlx::{AssertSqlSafe, query, query_as, query_scalar};
 use sqlx_postgres::PgPool;
+use telegrab_model::entity::cbz::Cbz;
 
 pub async fn create(pool: &PgPool, path: String) -> Result<Cbz, sqlx::Error> {
     let sql = "INSERT INTO cbz (path) VALUES ($1) RETURNING *";
@@ -13,11 +13,7 @@ pub async fn create_with_doc_id(
     path: String,
 ) -> Result<Cbz, sqlx::Error> {
     let sql = "INSERT INTO cbz (doc_id, path) VALUES ($1, $2) RETURNING *";
-    query_as(sql)
-        .bind(doc_id)
-        .bind(path)
-        .fetch_one(pool)
-        .await
+    query_as(sql).bind(doc_id).bind(path).fetch_one(pool).await
 }
 
 pub async fn find_by_id(pool: &PgPool, id: i32) -> Result<Cbz, sqlx::Error> {
@@ -40,7 +36,10 @@ pub async fn find_page(
     sort_clause: &str,
     pagination_clause: &str,
 ) -> Result<Vec<Cbz>, sqlx::Error> {
-    let sql = AssertSqlSafe(format!("SELECT * FROM cbz{}{}", sort_clause, pagination_clause));
+    let sql = AssertSqlSafe(format!(
+        "SELECT * FROM cbz{}{}",
+        sort_clause, pagination_clause
+    ));
     query_as(sql).fetch_all(pool).await
 }
 
@@ -49,11 +48,7 @@ pub async fn count(pool: &PgPool) -> Result<i64, sqlx::Error> {
     query_scalar(sql).fetch_one(pool).await
 }
 
-pub async fn update(
-    pool: &PgPool,
-    id: i32,
-    doc_id: Option<i32>,
-) -> Result<Cbz, sqlx::Error> {
+pub async fn update(pool: &PgPool, id: i32, doc_id: Option<i32>) -> Result<Cbz, sqlx::Error> {
     let sql = "UPDATE cbz SET doc_id = $1 WHERE id = $2 RETURNING *";
     query_as(sql).bind(doc_id).bind(id).fetch_one(pool).await
 }

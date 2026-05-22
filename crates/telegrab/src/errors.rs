@@ -49,21 +49,9 @@ pub enum Error {
     Unauthorized(String),
     #[error("internal server error")]
     InternalServerError,
-    #[error("")]
-    CustomError(StatusCode, ErrorDetail),
-    #[error("")]
-    InvalidIdempotencyKey,
-
-    /// Catch-all for errors without a specific variant. Prefer adding a dedicated variant.
-    #[error(transparent)]
-    Any(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl Error {
-    pub fn wrap(err: impl std::error::Error + Send + Sync + 'static) -> Self {
-        Self::Any(Box::new(err))
-    }
-
     pub fn msg(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Message(err.to_string())
     }
@@ -172,7 +160,6 @@ impl IntoResponse for Error {
                 ErrorDetail::new("internal_server_error", "Internal Server Error"),
             ),
 
-            Self::CustomError(status_code, data) => (status_code, data),
             Self::WithBacktrace { inner, backtrace } => {
                 println!("\n{}", inner.to_string().red().underline());
                 backtrace::print_backtrace(&backtrace).unwrap();

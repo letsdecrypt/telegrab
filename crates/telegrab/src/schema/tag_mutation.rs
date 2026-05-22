@@ -3,7 +3,7 @@ use crate::schema::tag_query::{AlbumsForTagLoader, Tag};
 use crate::schema::{ArcPgPool, from_global_id};
 use crate::service;
 use async_graphql::dataloader::{DataLoader, LruCache};
-use async_graphql::{Context, InputObject, Object, SimpleObject, ID};
+use async_graphql::{Context, ID, InputObject, Object, SimpleObject};
 
 /// Input for creating a new tag
 #[derive(InputObject, Debug, Clone)]
@@ -158,9 +158,14 @@ impl TagMutation {
             }
         }
 
-        let tag = service::tag::update_tag(pool, id as i32, input.name.as_deref(), input.description.as_deref())
-            .await
-            .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+        let tag = service::tag::update_tag(
+            pool,
+            id as i32,
+            input.name.as_deref(),
+            input.description.as_deref(),
+        )
+        .await
+        .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
 
         Ok(UpdateTagPayload {
             tag: tag.into(),
@@ -213,7 +218,9 @@ impl TagMutation {
             .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
 
         if exists {
-            return Err(async_graphql::Error::new("Tag already associated with this album"));
+            return Err(async_graphql::Error::new(
+                "Tag already associated with this album",
+            ));
         }
 
         service::tag::add_tag_to_album(pool, album_id as i32, tag_id as i32)
@@ -250,7 +257,9 @@ impl TagMutation {
             .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
 
         if count == 0 {
-            return Err(async_graphql::Error::new("Tag not associated with this album"));
+            return Err(async_graphql::Error::new(
+                "Tag not associated with this album",
+            ));
         }
 
         // Invalidate caches
@@ -274,7 +283,9 @@ impl TagMutation {
         #[graphql(desc = "Global ID of the album")] album_id: ID,
         #[graphql(desc = "Global IDs of existing tags to add")] tag_ids: Vec<ID>,
         #[graphql(desc = "Names of new tags to create and add")] new_tag_names: Vec<String>,
-        #[graphql(desc = "Client mutation ID for Relay support")] client_mutation_id: Option<String>,
+        #[graphql(desc = "Client mutation ID for Relay support")] client_mutation_id: Option<
+            String,
+        >,
     ) -> async_graphql::Result<BatchAddTagsPayload> {
         let pool = ctx.data::<ArcPgPool>()?;
         let (_, album_id) = from_global_id(album_id.as_str())?;
@@ -309,7 +320,8 @@ impl TagMutation {
                 continue;
             }
 
-            let tag = match service::tag::get_tag_by_name(pool, name).await
+            let tag = match service::tag::get_tag_by_name(pool, name)
+                .await
                 .map_err(|e| async_graphql::Error::new(format!("{}", e)))?
             {
                 Some(existing) => existing,

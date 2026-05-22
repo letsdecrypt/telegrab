@@ -1,9 +1,9 @@
-use serde::Serialize;
-
 pub mod cbz;
 pub mod doc;
 pub mod pagination;
 pub mod pic;
+
+use serde::Serialize;
 
 #[derive(Debug, Copy, Clone, Serialize)]
 pub struct AffectedRows {

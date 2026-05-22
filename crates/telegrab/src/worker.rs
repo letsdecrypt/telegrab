@@ -15,6 +15,7 @@ use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use telegrab_core::util;
 use tokio::sync::mpsc;
 use zip::write::SimpleFileOptions;
 
@@ -25,8 +26,8 @@ pub struct TaskWorker {
     http_client: Arc<HttpClientManager>,
     db_pool: Arc<PgPool>,
     worker_id: usize,
-    pic_dir: String,
-    cbz_dir: String,
+    pic_dir: Arc<String>,
+    cbz_dir: Arc<String>,
 }
 
 impl TaskWorker {
@@ -226,12 +227,12 @@ impl TaskWorker {
         let pic = service::pic::get_pic_by_id(&self.db_pool, *id).await?;
         let doc = service::doc::get_doc_by_id(&self.db_pool, pic.doc_id).await?;
         let total: usize = doc.page_count.map(|n| n as usize).unwrap_or(1);
-        let last_path_segment = url_last_segment(&doc.url).unwrap_or_else(|| {
+        let last_path_segment = util::url_last_segment(&doc.url).unwrap_or_else(|| {
             tracing::warn!("Failed to extract URL segment from: {}", doc.url);
             doc.url.clone()
         });
-        let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
-        ensure_dir_exists(&save_dir).await?;
+        let save_dir = PathBuf::from(self.pic_dir.as_ref()).join(last_path_segment);
+        util::ensure_dir_exists(&save_dir).await?;
         if self
             .inner_process_pic_download(&pic, total, &save_dir)
             .await
@@ -254,7 +255,7 @@ impl TaskWorker {
         let pic_url = pic.url.clone();
         let seq = pic.seq;
         let ext = pic_url.split('.').next_back().unwrap_or("jpg");
-        let filename = format_page_filename(seq as usize, total, ext);
+        let filename = util::format_page_filename(seq as usize, total, ext);
         let filepath = save_dir.join(filename);
         if Path::new(&filepath).exists() {
             tracing::info!(
@@ -280,12 +281,12 @@ impl TaskWorker {
     }
     async fn process_doc_download_task(&self, id: &i32, task_id: &str) -> Result<Option<String>> {
         let doc = service::doc::get_doc_by_id(&self.db_pool, *id).await?;
-        let last_path_segment = url_last_segment(&doc.url).unwrap_or_else(|| {
+        let last_path_segment = util::url_last_segment(&doc.url).unwrap_or_else(|| {
             tracing::warn!("Failed to extract URL segment from: {}", doc.url);
             doc.url.clone()
         });
-        let save_dir = PathBuf::from(&self.pic_dir).join(last_path_segment);
-        ensure_dir_exists(&save_dir).await?;
+        let save_dir = PathBuf::from(self.pic_dir.as_ref()).join(last_path_segment);
+        util::ensure_dir_exists(&save_dir).await?;
         let pics = service::pic::get_pics_by_doc_id(&self.db_pool, *id).await?;
         let total = pics.len();
         let mut succeeded = 0;
@@ -322,21 +323,23 @@ impl TaskWorker {
         doc.page_count = Some(pics.len() as i16);
         let doc_xml: ComicInfo = ComicInfo::from(doc.clone());
         let mut xml = String::new();
-        quick_xml::se::to_writer(&mut xml, &doc_xml).expect("Failed to serialize ComicInfo Xml");
+        quick_xml::se::to_writer(&mut xml, &doc_xml).map_err(|e| {
+            crate::Error::Message(format!("Failed to serialize ComicInfo Xml: {}", e))
+        })?;
         let xml_with_decl = format!(r#"<?xml version="1.0" encoding="utf-8"?>{}"#, xml);
-        let last_path_segment = url_last_segment(&doc.url).unwrap_or_else(|| {
+        let last_path_segment = util::url_last_segment(&doc.url).unwrap_or_else(|| {
             tracing::warn!("Failed to extract URL segment from: {}", doc.url);
             doc.url.clone()
         });
-        ensure_dir_exists(&self.cbz_dir).await?;
-        let pic_dir = PathBuf::from(&self.pic_dir).join(&last_path_segment);
+        util::ensure_dir_exists(self.cbz_dir.as_ref()).await?;
+        let pic_dir = PathBuf::from(self.pic_dir.as_ref()).join(&last_path_segment);
         let cbz_filename = match (doc.writer, doc.title, doc.page_title) {
             (Some(writer), Some(title), _) => format!("[{}]{}", writer, title),
             (_, None, Some(page_title)) => page_title.to_string(),
             _ => last_path_segment.to_string(),
         };
         let cbz_full_filename = format!("{}.cbz", cbz_filename);
-        let zip_file_path = PathBuf::from(&self.cbz_dir).join(cbz_full_filename.clone());
+        let zip_file_path = PathBuf::from(self.cbz_dir.as_ref()).join(cbz_full_filename.clone());
 
         let zip_file_path_clone = zip_file_path.clone();
         let pic_dir_clone = pic_dir.clone();
@@ -344,7 +347,7 @@ impl TaskWorker {
         let worker_id = self.worker_id;
 
         let result = tokio::task::spawn_blocking(move || -> Result<()> {
-            let files = match get_files_in_dir(&pic_dir_clone) {
+            let files = match util::get_files_in_dir(&pic_dir_clone) {
                 Ok(f) => f,
                 Err(err) => {
                     tracing::warn!(
@@ -360,18 +363,22 @@ impl TaskWorker {
             let mut zip_writer = zip::ZipWriter::new(zip_file);
             let simple_options = SimpleFileOptions::default();
 
-            zip_writer.start_file("ComicInfo.xml", simple_options).map_err(crate::Error::wrap)?;
+            zip_writer
+                .start_file("ComicInfo.xml", simple_options)
+                .map_err(crate::Error::msg)?;
             zip_writer.write_all(xml_with_decl_clone.as_bytes())?;
 
             for file in &files {
                 let filename = file.file_name().unwrap().to_string_lossy().to_string();
-                zip_writer.start_file(&filename, simple_options).map_err(crate::Error::wrap)?;
+                zip_writer
+                    .start_file(&filename, simple_options)
+                    .map_err(crate::Error::msg)?;
                 let f = std::fs::File::open(file)?;
                 let mut reader = BufReader::new(f);
                 std::io::copy(&mut reader, &mut zip_writer)?;
             }
 
-            zip_writer.finish().map_err(crate::Error::wrap)?;
+            zip_writer.finish().map_err(crate::Error::msg)?;
             Ok(())
         })
         .await
@@ -390,7 +397,7 @@ impl TaskWorker {
         Ok(None)
     }
     async fn process_scan_dir_task(&self) -> Result<Option<String>> {
-        let dir = Path::new(&self.cbz_dir);
+        let dir = Path::new(self.cbz_dir.as_ref());
         let mut files = HashSet::new();
         scan_dir_recursive(dir, &mut files).await;
         for file in files {
@@ -404,7 +411,7 @@ impl TaskWorker {
     }
     async fn process_remove_cbz_task(&self, cbz_id: &i32) -> Result<Option<String>> {
         let cbz = service::cbz::get_cbz_by_id(&self.db_pool, *cbz_id).await?;
-        let cbz_path = PathBuf::from(&self.cbz_dir).join(cbz.path);
+        let cbz_path = PathBuf::from(self.cbz_dir.as_ref()).join(cbz.path);
         if let Err(err) = std::fs::remove_file(cbz_path) {
             tracing::warn!("Remove cbz {} failed: {}", cbz_id, err);
         }
@@ -503,7 +510,7 @@ enum FsEvent {
 
 pub async fn setup_fs_monitor(state: AppState, configuration: Arc<Settings>) {
     let cbz_dir = configuration.cbz_dir.clone();
-    let result = ensure_dir_exists(&cbz_dir).await;
+    let result = util::ensure_dir_exists(&cbz_dir).await;
     if let Err(err) = result {
         tracing::error!("Failed to ensure cbz dir exists: {:?}", err);
         return;
@@ -577,43 +584,6 @@ pub async fn stop_fs_monitor(state: AppState) {
     }
 }
 
-async fn ensure_dir_exists<P: AsRef<Path>>(p: P) -> Result<()> {
-    let pp = p.as_ref();
-    if !pp.exists() {
-        tokio::fs::create_dir_all(pp).await?;
-    }
-    Ok(())
-}
-
-fn format_page_filename(page_idx: usize, total_pages: usize, ext: &str) -> String {
-    let num_digits = ((total_pages as f64).log10().floor() as usize + 1).max(3);
-    format!("{:0width$}.{}", page_idx, ext, width = num_digits)
-}
-
-fn get_files_in_dir<P: AsRef<Path>>(dir_path: P) -> Result<Vec<PathBuf>, std::io::Error> {
-    let dir = dir_path.as_ref();
-
-    if !dir.is_dir() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("dir not exists: {}", dir.display()),
-        ));
-    }
-
-    let mut files = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        // 只保留文件（排除目录）
-        if path.is_file() {
-            files.push(path);
-        }
-    }
-
-    Ok(files)
-}
-
 async fn scan_dir_recursive(dir_path: &Path, files: &mut HashSet<PathBuf>) {
     if !dir_path.is_dir() {
         tracing::error!("dir not exists: {:?}", dir_path);
@@ -644,13 +614,4 @@ async fn scan_dir_recursive(dir_path: &Path, files: &mut HashSet<PathBuf>) {
             files.insert(path);
         }
     }
-}
-fn url_last_segment(url: &str) -> Option<String> {
-    let parsed_url = url::Url::parse(url).ok()?;
-    let last_path_segment = parsed_url.path_segments()?.next_back()?;
-    Some(
-        url::form_urlencoded::parse(last_path_segment.as_bytes())
-            .map(|(key, _)| key)
-            .collect(),
-    )
 }

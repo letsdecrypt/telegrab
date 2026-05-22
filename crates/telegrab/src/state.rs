@@ -249,12 +249,12 @@ pub struct AppState {
     pub http_client: Arc<HttpClientManager>,
     pub base_url: String,
     pub worker_count: usize,
-    pub pic_dir: String,
-    pub cbz_dir: String,
+    pub pic_dir: Arc<String>,
+    pub cbz_dir: Arc<String>,
 }
 
 impl AppState {
-    pub async fn build(configuration: &Settings) -> Self {
+    pub async fn build(configuration: &Settings) -> crate::Result<Self> {
         let queue_state = Arc::new(QueueState::new(configuration.worker.max_total_tasks));
         let db_pool = Arc::new(
             PgPoolOptions::new()
@@ -262,8 +262,7 @@ impl AppState {
                 .max_connections(configuration.database.max_connections)
                 .min_connections(configuration.database.min_connections)
                 .connect_with(configuration.database.with_db())
-                .await
-                .expect("Failed to connect to database"),
+                .await?,
         );
         let shutdown = Arc::new(GracefulShutdown::new());
 
@@ -272,13 +271,13 @@ impl AppState {
         )));
 
         if configuration.database.auto_migrate {
-            sqlx::migrate!("../../migrations")
+            sqlx::migrate!("../telegrab-db/migrations")
                 .run(&*db_pool)
                 .await
-                .expect("Could not run database migrations.");
+                .map_err(crate::Error::msg)?;
         }
 
-        Self {
+        Ok(Self {
             queue_state,
             fs_watcher: Arc::new(Mutex::new(None)),
             shutdown,
@@ -286,8 +285,8 @@ impl AppState {
             http_client,
             base_url: configuration.application.base_url.clone(),
             worker_count: configuration.worker.count,
-            pic_dir: configuration.pic_dir.clone(),
-            cbz_dir: configuration.cbz_dir.clone(),
-        }
+            pic_dir: Arc::new(configuration.pic_dir.clone()),
+            cbz_dir: Arc::new(configuration.cbz_dir.clone()),
+        })
     }
 }

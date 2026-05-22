@@ -3,6 +3,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx_postgres::{PgConnectOptions, PgSslMode};
+pub use telegrab_core::config::HttpClientSettings;
 
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory");
@@ -65,27 +66,6 @@ pub struct Settings {
     pub logger: LoggerSettings,
     pub pic_dir: String,
     pub cbz_dir: String,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct HttpClientSettings {
-    pub connect_timeout_secs: u64,
-    pub timeout_secs: u64,
-    pub max_connections: usize,
-    pub pool_enabled: bool,
-    pub user_agent: String,
-}
-
-impl Default for HttpClientSettings {
-    fn default() -> Self {
-        Self {
-            connect_timeout_secs: 30,
-            timeout_secs: 60,
-            max_connections: 100,
-            pool_enabled: true,
-            user_agent: "telegraph/0.1.0".into(),
-        }
-    }
 }
 
 #[derive(Deserialize, Debug, Clone)]

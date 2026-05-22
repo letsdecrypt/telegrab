@@ -7,3 +7,9 @@ pub struct MutatePicReq {
     pub url: String,
     pub seq: i32,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PicQuery {
+    pub doc_id: Option<i32>,
+}

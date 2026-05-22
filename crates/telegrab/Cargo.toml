@@ -16,6 +16,9 @@ path = "src/main.rs"
 name = "telegrab"
 
 [dependencies]
+telegrab-model = { path = "../telegrab-model" }
+telegrab-db = { path = "../telegrab-db" }
+telegrab-core = { path = "../telegrab-core" }
 anyhow = "1.0"
 async-graphql = { version = "8.0.0-rc.5", features = ["time", "dataloader", "apollo_persisted_queries"] }
 async-graphql-axum = "8.0.0-rc.5"

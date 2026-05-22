@@ -2,4 +2,9 @@ application:
   base_url: "https://telegrab.your-domain.com"
 
 database:
+  host: "/var/run/postgresql"
+  port: 5432 # with UNIX domain socket, the following options are ignored
+  database_name: "telegrab"
+  username: "telegrab"
+  password: "password"
   require_ssl: false

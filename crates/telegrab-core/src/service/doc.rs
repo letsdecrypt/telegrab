@@ -1,11 +1,11 @@
-use crate::model::dto::doc::{CreateDocReq, UpdateDocReq};
-use crate::model::dto::pagination::{CursorBasedPaginationResponse, PaginationResponse};
-use crate::model::dto::pagination::{PaginationQuery, RefineSortOrder};
-use crate::model::entity::doc::{Doc, TelegraphPost};
-use crate::model::{Direction, PaginationArgs, SortOrder};
-use crate::repository;
 use crate::service::helper::build_cursor_pagination;
 use sqlx_postgres::PgPool;
+use telegrab_db as repository;
+use telegrab_model::dto::doc::{CreateDocReq, UpdateDocReq};
+use telegrab_model::dto::pagination::{CursorBasedPaginationResponse, PaginationResponse};
+use telegrab_model::dto::pagination::{PaginationQuery, RefineSortOrder};
+use telegrab_model::entity::doc::{Doc, TelegraphPost};
+use telegrab_model::{Direction, PaginationArgs, SortOrder};
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Copy)]
@@ -97,7 +97,9 @@ pub async fn get_docs(
     })
 }
 
-pub async fn get_parsed_docs(pool: &PgPool) -> Result<Vec<crate::model::entity::doc::ShimDoc>, sqlx::Error> {
+pub async fn get_parsed_docs(
+    pool: &PgPool,
+) -> Result<Vec<telegrab_model::entity::doc::ShimDoc>, sqlx::Error> {
     repository::doc::find_parsed(pool).await
 }
 
@@ -172,7 +174,8 @@ pub async fn get_cursor_based_pagination_docs(
             (SortOrder::Desc, Direction::Forward) => " < ",
             (SortOrder::Desc, Direction::Backward) => " > ",
         };
-        repository::doc::find_cursor_with_cursor(pool, where_op, cursor, limit as i64 + 1, order_by).await?
+        repository::doc::find_cursor_with_cursor(pool, where_op, cursor, limit as i64 + 1, order_by)
+            .await?
     } else {
         repository::doc::find_cursor_no_cursor(pool, limit as i64 + 1, order_by).await?
     };

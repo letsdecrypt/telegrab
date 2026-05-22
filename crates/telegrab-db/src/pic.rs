@@ -1,6 +1,6 @@
-use crate::model::entity::pic::Pic;
-use sqlx::{query, query_as, query_scalar, AssertSqlSafe};
+use sqlx::{AssertSqlSafe, query, query_as, query_scalar};
 use sqlx_postgres::PgPool;
+use telegrab_model::entity::pic::Pic;
 
 pub async fn create(pool: &PgPool, url: String, doc_id: i32, seq: i32) -> Result<Pic, sqlx::Error> {
     let sql = "INSERT INTO pic (url, doc_id, seq) VALUES ($1, $2, $3) RETURNING *";
@@ -96,7 +96,10 @@ pub async fn find_cursor_with_cursor(
 ) -> Result<Vec<Pic>, sqlx::Error> {
     let main_sql = "SELECT * FROM pic WHERE doc_id = $1";
     let where_clause = format!("AND id {} $2", where_op);
-    let sql = AssertSqlSafe(format!("{} {} {} LIMIT $3", main_sql, where_clause, order_by));
+    let sql = AssertSqlSafe(format!(
+        "{} {} {} LIMIT $3",
+        main_sql, where_clause, order_by
+    ));
     query_as(sql)
         .bind(doc_id)
         .bind(cursor)
@@ -113,11 +116,7 @@ pub async fn find_cursor_no_cursor(
 ) -> Result<Vec<Pic>, sqlx::Error> {
     let main_sql = "SELECT * FROM pic WHERE doc_id = $1";
     let sql = AssertSqlSafe(format!("{} {} LIMIT $2", main_sql, order_by));
-    query_as(sql)
-        .bind(doc_id)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
+    query_as(sql).bind(doc_id).bind(limit).fetch_all(pool).await
 }
 
 pub async fn count_by_doc_id(pool: &PgPool, doc_id: i32) -> Result<i64, sqlx::Error> {

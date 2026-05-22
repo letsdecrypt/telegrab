@@ -8,7 +8,3 @@ use serde::Serialize;
 pub fn json<T: Serialize>(t: T) -> Result<Response> {
     Ok(Json(t).into_response())
 }
-
-pub fn empty() -> Result<Response> {
-    Ok(().into_response())
-}

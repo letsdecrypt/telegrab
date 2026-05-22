@@ -1,7 +1,7 @@
-use crate::model::entity::doc::Doc;
-use crate::model::entity::tag::{AlbumTag, Tag, TagWithAlbumCount};
-use sqlx::{query, query_as, query_scalar, FromRow};
+use sqlx::{FromRow, query, query_as, query_scalar};
 use sqlx_postgres::PgPool;
+use telegrab_model::entity::doc::Doc;
+use telegrab_model::entity::tag::{AlbumTag, Tag, TagWithAlbumCount};
 use time::OffsetDateTime;
 
 #[derive(FromRow)]
@@ -124,7 +124,11 @@ impl From<TagAlbumRow> for Doc {
     }
 }
 
-pub async fn create(pool: &PgPool, name: &str, description: Option<&str>) -> Result<Tag, sqlx::Error> {
+pub async fn create(
+    pool: &PgPool,
+    name: &str,
+    description: Option<&str>,
+) -> Result<Tag, sqlx::Error> {
     let sql = "INSERT INTO tag (name, description) VALUES ($1, $2) RETURNING *";
     query_as(sql)
         .bind(name)
@@ -155,7 +159,11 @@ pub async fn find_all_with_count(pool: &PgPool) -> Result<Vec<TagWithAlbumCount>
     query_as(sql).fetch_all(pool).await
 }
 
-pub async fn search_by_name(pool: &PgPool, pattern: &str, limit: i32) -> Result<Vec<Tag>, sqlx::Error> {
+pub async fn search_by_name(
+    pool: &PgPool,
+    pattern: &str,
+    limit: i32,
+) -> Result<Vec<Tag>, sqlx::Error> {
     let sql = r#"
         SELECT * FROM tag
         WHERE name ILIKE $1
@@ -298,7 +306,11 @@ pub async fn delete(pool: &PgPool, id: i32) -> Result<u64, sqlx::Error> {
         .map(|r| r.rows_affected())
 }
 
-pub async fn add_to_album(pool: &PgPool, album_id: i32, tag_id: i32) -> Result<AlbumTag, sqlx::Error> {
+pub async fn add_to_album(
+    pool: &PgPool,
+    album_id: i32,
+    tag_id: i32,
+) -> Result<AlbumTag, sqlx::Error> {
     let sql = "INSERT INTO album_tag (album_id, tag_id) VALUES ($1, $2) RETURNING *";
     query_as(sql)
         .bind(album_id)
@@ -307,7 +319,11 @@ pub async fn add_to_album(pool: &PgPool, album_id: i32, tag_id: i32) -> Result<A
         .await
 }
 
-pub async fn remove_from_album(pool: &PgPool, album_id: i32, tag_id: i32) -> Result<u64, sqlx::Error> {
+pub async fn remove_from_album(
+    pool: &PgPool,
+    album_id: i32,
+    tag_id: i32,
+) -> Result<u64, sqlx::Error> {
     let sql = "DELETE FROM album_tag WHERE album_id = $1 AND tag_id = $2";
     query(sql)
         .bind(album_id)
@@ -317,7 +333,11 @@ pub async fn remove_from_album(pool: &PgPool, album_id: i32, tag_id: i32) -> Res
         .map(|r| r.rows_affected())
 }
 
-pub async fn album_tag_exists(pool: &PgPool, album_id: i32, tag_id: i32) -> Result<bool, sqlx::Error> {
+pub async fn album_tag_exists(
+    pool: &PgPool,
+    album_id: i32,
+    tag_id: i32,
+) -> Result<bool, sqlx::Error> {
     let sql = "SELECT EXISTS(SELECT 1 FROM album_tag WHERE album_id = $1 AND tag_id = $2)";
     let exists: bool = query_scalar(sql)
         .bind(album_id)
@@ -329,14 +349,15 @@ pub async fn album_tag_exists(pool: &PgPool, album_id: i32, tag_id: i32) -> Resu
 
 pub async fn name_exists(pool: &PgPool, name: &str) -> Result<bool, sqlx::Error> {
     let sql = "SELECT EXISTS(SELECT 1 FROM tag WHERE name = $1)";
-    let exists: bool = query_scalar(sql)
-        .bind(name)
-        .fetch_one(pool)
-        .await?;
+    let exists: bool = query_scalar(sql).bind(name).fetch_one(pool).await?;
     Ok(exists)
 }
 
-pub async fn name_exists_excluding(pool: &PgPool, name: &str, exclude_id: i32) -> Result<bool, sqlx::Error> {
+pub async fn name_exists_excluding(
+    pool: &PgPool,
+    name: &str,
+    exclude_id: i32,
+) -> Result<bool, sqlx::Error> {
     let sql = "SELECT EXISTS(SELECT 1 FROM tag WHERE name = $1 AND id != $2)";
     let exists: bool = query_scalar(sql)
         .bind(name)

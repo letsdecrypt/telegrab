@@ -55,7 +55,3 @@ report.*.json
 !.env.example
 
 /data
-
-# agent
-resume.sh
-plan.md

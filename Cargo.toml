@@ -1,5 +1,5 @@
 [workspace]
-members = [ "crates/telegrab" ]
+members = [ "crates/telegrab-model", "crates/telegrab-db", "crates/telegrab-core", "crates/telegrab", "crates/telegrabber" ]
 resolver = "2"
 
 [workspace.package]

@@ -1,8 +1,8 @@
-use crate::model::dto::pagination::{PaginationQuery, PaginationResponse, RefineSortOrder};
-use crate::model::entity::cbz::Cbz;
-use crate::repository;
 use convert_case::{Case, Casing};
 use sqlx_postgres::PgPool;
+use telegrab_db as repository;
+use telegrab_model::dto::pagination::{PaginationQuery, PaginationResponse, RefineSortOrder};
+use telegrab_model::entity::cbz::Cbz;
 
 pub async fn create_cbz(db_pool: &PgPool, path: String) -> Result<Cbz, sqlx::Error> {
     repository::cbz::create(db_pool, path).await

@@ -1,7 +1,7 @@
-use crate::model::dto::doc::UpdateDocReq;
-use crate::model::entity::doc::{Doc, ShimDoc};
-use sqlx::{query, query_as, query_scalar, AssertSqlSafe};
+use sqlx::{AssertSqlSafe, query, query_as, query_scalar};
 use sqlx_postgres::PgPool;
+use telegrab_model::dto::doc::UpdateDocReq;
+use telegrab_model::entity::doc::{Doc, ShimDoc};
 use time::OffsetDateTime;
 
 pub async fn create(pool: &PgPool, url: &str) -> Result<Doc, sqlx::Error> {
@@ -202,12 +202,11 @@ pub async fn find_cursor_with_cursor(
 ) -> Result<Vec<Doc>, sqlx::Error> {
     let main_sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id";
     let where_clause = format!("WHERE doc.id {} $1", where_op);
-    let sql = AssertSqlSafe(format!("{} {} {} LIMIT $2", main_sql, where_clause, order_by));
-    query_as(sql)
-        .bind(cursor)
-        .bind(limit)
-        .fetch_all(pool)
-        .await
+    let sql = AssertSqlSafe(format!(
+        "{} {} {} LIMIT $2",
+        main_sql, where_clause, order_by
+    ));
+    query_as(sql).bind(cursor).bind(limit).fetch_all(pool).await
 }
 
 pub async fn find_cursor_no_cursor(

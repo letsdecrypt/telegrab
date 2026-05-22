@@ -1,11 +1,11 @@
-use crate::configuration::HttpClientSettings;
-use crate::model::entity::doc::TelegraphPost;
+use crate::config::HttpClientSettings;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use telegrab_model::entity::doc::TelegraphPost;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
@@ -132,7 +132,7 @@ impl HttpClientManager {
             speed: speed as u64,
         })
     }
-    pub async fn parse_telegraph_post(&self, url: &str) -> crate::Result<TelegraphPost> {
+    pub async fn parse_telegraph_post(&self, url: &str) -> Result<TelegraphPost, reqwest::Error> {
         // 获取网页内容
         let html_content = self.client.get(url).send().await?.text().await?;
 
@@ -140,7 +140,8 @@ impl HttpClientManager {
         let document = Html::parse_document(&html_content);
 
         // 提取标题
-        let title_selector = Selector::parse("h1").expect("h1 is a valid CSS selector and cannot fail");
+        let title_selector =
+            Selector::parse("h1").expect("h1 is a valid CSS selector and cannot fail");
         let title = document
             .select(&title_selector)
             .next()

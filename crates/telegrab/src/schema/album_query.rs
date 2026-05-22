@@ -1,16 +1,16 @@
-use crate::model::entity::doc::Doc;
 use crate::model::SortOrder;
+use crate::model::entity::doc::Doc;
 use crate::schema::image_query::Image;
 use crate::schema::image_query::{ImagesConnectionName, ImagesEdgeName};
 use crate::schema::tag_query::Tag;
 use crate::schema::{
-    from_global_id, offset_to_cursor, process_pagination, to_global_id, ArcPgPool, ConnectionFields,
-    RelayTy,
+    ArcPgPool, ConnectionFields, RelayTy, from_global_id, offset_to_cursor, process_pagination,
+    to_global_id,
 };
 use crate::service;
 use async_graphql::connection::{Connection, ConnectionNameType, Edge, EdgeNameType, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader, LruCache};
-use async_graphql::{connection, ComplexObject, Context, Object, OutputType, SimpleObject, ID};
+use async_graphql::{ComplexObject, Context, ID, Object, OutputType, SimpleObject, connection};
 use std::collections::HashMap;
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -134,9 +134,13 @@ impl Album {
         &self,
         ctx: &Context<'_>,
         #[graphql(desc = "Cursor to fetch items after (forward pagination)")] after: Option<String>,
-        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] before: Option<String>,
-        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")] first: Option<i32>,
-        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")] last: Option<i32>,
+        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] before: Option<
+            String,
+        >,
+        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")]
+        first: Option<i32>,
+        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")]
+        last: Option<i32>,
     ) -> async_graphql::Result<
         Connection<
             String,
@@ -236,9 +240,13 @@ impl AlbumQuery {
         &self,
         ctx: &Context<'_>,
         #[graphql(desc = "Cursor to fetch items after (forward pagination)")] after: Option<String>,
-        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] before: Option<String>,
-        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")] first: Option<i32>,
-        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")] last: Option<i32>,
+        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] before: Option<
+            String,
+        >,
+        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")]
+        first: Option<i32>,
+        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")]
+        last: Option<i32>,
         #[graphql(desc = "Sort order (ascending or descending)")] order: Option<SortOrder>,
         #[graphql(desc = "Filter by title (partial match)")] title: Option<String>,
     ) -> async_graphql::Result<
@@ -294,7 +302,9 @@ impl AlbumQuery {
     async fn album_search(
         &self,
         ctx: &Context<'_>,
-        #[graphql(desc = "Search keyword (empty or null returns empty result)")] keyword: Option<String>,
+        #[graphql(desc = "Search keyword (empty or null returns empty result)")] keyword: Option<
+            String,
+        >,
         #[graphql(default = 1, desc = "Page number (1-based, default: 1)")] page: i32,
         #[graphql(default = 10, desc = "Items per page (default: 10, max: 100)")] page_size: i32,
     ) -> async_graphql::Result<AlbumSearchResult> {
@@ -302,7 +312,13 @@ impl AlbumQuery {
 
         // Validate parameters
         let page = if page < 1 { 1 } else { page };
-        let page_size = if page_size < 1 { 10 } else if page_size > 100 { 100 } else { page_size };
+        let page_size = if page_size < 1 {
+            10
+        } else if page_size > 100 {
+            100
+        } else {
+            page_size
+        };
 
         // Return empty result if no keyword provided
         match keyword {
@@ -330,7 +346,8 @@ impl AlbumQuery {
                     .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
                 let total = service::doc::count_docs_by_keyword(pool, &kw)
                     .await
-                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))? as i32;
+                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))?
+                    as i32;
 
                 let albums: Vec<Album> = docs.into_iter().map(|doc| doc.into()).collect();
                 let total_pages = (total + page_size - 1) / page_size;

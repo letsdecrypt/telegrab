@@ -15,7 +15,7 @@ use tokio::task::JoinError;
 async fn main() -> Result<()> {
     let configuration = Arc::new(get_configuration().expect("Failed to read configuration."));
     init(&configuration.logger);
-    let app_state = AppState::build(&configuration).await;
+    let app_state = AppState::build(&configuration).await?;
     let application_task = tokio::spawn(run_app_until_stopped(
         app_state.clone(),
         configuration.clone(),

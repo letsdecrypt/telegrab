@@ -2,10 +2,9 @@ application:
   base_url: "http://127.0.0.1:9000"
 
 database:
-  host: "/var/run/postgresql"
-  database_name: "telegrab"
-  # with UNIX domain socket, the following options are ignored
+  host: "localhost"
   port: 5432
+  database_name: "telegrab"
   username: "telegrab"
   password: "password"
   require_ssl: false

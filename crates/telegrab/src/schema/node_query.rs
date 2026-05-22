@@ -21,12 +21,12 @@ impl NodeQuery {
             RelayTy::Album => {
                 let loader = ctx.data::<DataLoader<AlbumLoader, LruCache>>()?;
                 let album = loader.load_one(id as i32).await?;
-                Ok(album.map(|a| RelayNode::Album(a)))
+                Ok(album.map(RelayNode::Album))
             }
             RelayTy::Image => {
                 let loader = ctx.data::<DataLoader<ImageLoader, LruCache>>()?;
                 let image = loader.load_one(id as i32).await?;
-                Ok(image.map(|i| RelayNode::Image(i)))
+                Ok(image.map(RelayNode::Image))
             }
             _ => Err(async_graphql::Error::new("Invalid node type")),
         }

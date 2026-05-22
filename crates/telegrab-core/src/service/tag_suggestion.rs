@@ -18,8 +18,7 @@ use std::sync::LazyLock;
 
 /// 作者/社团标记：[xxx] 或 [xxx (yyy)]
 /// 可能不在字符串最开头（前面可能有展会标记）
-static RE_AUTHOR_BRACKET: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[([^\]]+)\]").unwrap());
+static RE_AUTHOR_BRACKET: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]+)\]").unwrap());
 
 /// 社团+作者拆分：[Circle (Author)] → Circle
 static RE_CIRCLE_AUTHOR: LazyLock<Regex> =
@@ -59,13 +58,7 @@ static RE_TAG_BRACKET: LazyLock<Regex> = LazyLock::new(|| {
 
 /// 原作来源：(Fate/Grand Order), (艦隊これくしょん -艦これ-), (東方Project), ...
 /// 排除已知的杂志和展会标记
-static RE_SOURCE_PAREN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"\(([^)]+)\)",
-    )
-    .unwrap()
-});
-
+static RE_SOURCE_PAREN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\(([^)]+)\)").unwrap());
 
 // ════════════════════════════════════════════════════════════
 // 类型
@@ -104,7 +97,6 @@ pub struct TagSuggestion {
     pub category: TagCategory,
 }
 
-
 // ════════════════════════════════════════════════════════════
 // 提取逻辑
 // ════════════════════════════════════════════════════════════
@@ -139,7 +131,6 @@ fn normalize_magazine_name(raw: &str) -> Option<&str> {
     None
 }
 
-
 /// 从 page_title 提取所有候选 tag（去重）
 pub fn extract(page_title: &str) -> Vec<TagSuggestion> {
     let mut tags: Vec<TagSuggestion> = Vec::new();
@@ -147,7 +138,10 @@ pub fn extract(page_title: &str) -> Vec<TagSuggestion> {
 
     let mut add = |name: String, cat: TagCategory| {
         if seen.insert(name.clone()) {
-            tags.push(TagSuggestion { name, category: cat });
+            tags.push(TagSuggestion {
+                name,
+                category: cat,
+            });
         }
     };
 
@@ -206,9 +200,14 @@ pub fn extract(page_title: &str) -> Vec<TagSuggestion> {
     for cap in RE_TAG_BRACKET.captures_iter(page_title) {
         let raw = cap[0].trim_matches(&['[', ']'] as &[_]).trim();
         let cat = match raw.to_lowercase().as_str() {
-            s if s.contains("翻訳") || s.contains("翻譯") || s.contains("翻译")
-                || s.contains("chinese") || s == "英訳" =>
-                TagCategory::Language,
+            s if s.contains("翻訳")
+                || s.contains("翻譯")
+                || s.contains("翻译")
+                || s.contains("chinese")
+                || s == "英訳" =>
+            {
+                TagCategory::Language
+            }
             _ => TagCategory::Edition,
         };
         add(raw.to_string(), cat);
@@ -233,7 +232,10 @@ pub fn extract(page_title: &str) -> Vec<TagSuggestion> {
         }
 
         // 跳过纯数字、日期、卷期号
-        if raw.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '～') {
+        if raw
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '～')
+        {
             continue;
         }
 
@@ -244,9 +246,17 @@ pub fn extract(page_title: &str) -> Vec<TagSuggestion> {
 
         // 跳过已知的非原作模式
         let skip_prefixes = [
-            "DL版", "中国翻訳", "中国語", "英訳", "無修正",
-            "フルカラー版", "完全版", "総集編", "総集篇",
-            "デジタル特装版", "FANZA特別版",
+            "DL版",
+            "中国翻訳",
+            "中国語",
+            "英訳",
+            "無修正",
+            "フルカラー版",
+            "完全版",
+            "総集編",
+            "総集篇",
+            "デジタル特装版",
+            "FANZA特別版",
         ];
         if skip_prefixes.iter().any(|p| raw.eq_ignore_ascii_case(p)) {
             continue;
@@ -257,7 +267,6 @@ pub fn extract(page_title: &str) -> Vec<TagSuggestion> {
 
     tags
 }
-
 
 // ════════════════════════════════════════════════════════════
 // 测试
@@ -286,10 +295,15 @@ mod tests {
 
     #[test]
     fn test_extract_source_and_event() {
-        let tags = extract("(C95) [P:P (おりょう)] ゆきのん限定 3 (やはり俺の青春ラブコメはまちがっている。) [中国翻訳]");
+        let tags = extract(
+            "(C95) [P:P (おりょう)] ゆきのん限定 3 (やはり俺の青春ラブコメはまちがっている。) [中国翻訳]",
+        );
         let names: Vec<_> = tags.iter().map(|t| (t.name.as_str(), t.category)).collect();
         assert!(names.contains(&("C95", TagCategory::Event)));
-        assert!(names.contains(&("やはり俺の青春ラブコメはまちがっている。", TagCategory::Source)));
+        assert!(names.contains(&(
+            "やはり俺の青春ラブコメはまちがっている。",
+            TagCategory::Source
+        )));
         assert!(names.contains(&("中国翻訳", TagCategory::Language)));
     }
 
@@ -310,7 +324,9 @@ mod tests {
 
     #[test]
     fn test_extract_multiple_sources() {
-        let tags = extract("(C95) [出席番号26 (にろ)] 分身して浜風と三穴えっち (艦隊これくしょん -艦これ-)");
+        let tags = extract(
+            "(C95) [出席番号26 (にろ)] 分身して浜風と三穴えっち (艦隊これくしょん -艦これ-)",
+        );
         let names: Vec<_> = tags.iter().map(|t| (t.name.as_str(), t.category)).collect();
         assert!(names.contains(&("C95", TagCategory::Event)));
         assert!(names.contains(&("艦隊これくしょん -艦これ-", TagCategory::Source)));

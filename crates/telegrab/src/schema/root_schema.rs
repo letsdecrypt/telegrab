@@ -1,3 +1,4 @@
+use crate::schema::ArcPgPool;
 use crate::schema::album_mutation::AlbumMutation;
 use crate::schema::album_query::{AlbumLoader, AlbumQuery, TagsForAlbumLoader};
 use crate::schema::helper::ArcStates;
@@ -8,7 +9,6 @@ use crate::schema::tag_query::{AlbumsForTagLoader, TagLoader, TagQuery};
 use crate::schema::task_mutation::TaskMutation;
 use crate::schema::task_query::TaskQuery;
 use crate::schema::task_subscription::TaskSubscription;
-use crate::schema::ArcPgPool;
 use async_graphql::dataloader::{DataLoader, LruCache};
 use async_graphql::runtime::{TokioSpawner, TokioTimer};
 use async_graphql::{MergedObject, MergedSubscription, Schema};

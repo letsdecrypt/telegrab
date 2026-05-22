@@ -127,7 +127,7 @@ impl TryFrom<NewDocData> for dto::doc::CreateDocReq {
         if validator::ValidateUrl::validate_url(&value.url) {
             Ok(Self { url: value.url })
         } else {
-            Err(errors::Error::Message(format!(
+            Err(errors::Error::BadRequest(format!(
                 "Invalid url: {}",
                 value.url
             )))

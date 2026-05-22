@@ -2,12 +2,12 @@ use crate::model::entity::tag::{Tag as TagEntity, TagWithAlbumCount};
 use crate::schema::album_query::Album;
 use crate::schema::album_query::{AlbumsConnectionName, AlbumsEdgeName};
 use crate::schema::{
-    from_global_id, offset_to_cursor, to_global_id, ArcPgPool, ConnectionFields, RelayTy,
+    ArcPgPool, ConnectionFields, RelayTy, from_global_id, offset_to_cursor, to_global_id,
 };
 use crate::service;
 use async_graphql::connection::{Connection, Edge, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader, LruCache};
-use async_graphql::{ComplexObject, Context, Object, SimpleObject, ID};
+use async_graphql::{ComplexObject, Context, ID, Object, SimpleObject};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -194,7 +194,7 @@ impl TagQuery {
             .await
             .map_err(|e| async_graphql::Error::new(format!("{}", e)))?
             .ok_or_else(|| async_graphql::Error::new("Tag not found"))?;
-        Ok(tag.into())
+        Ok(tag)
     }
 
     /// Get all tags
@@ -212,11 +212,13 @@ impl TagQuery {
         &self,
         ctx: &Context<'_>,
         #[graphql(desc = "Search keyword for tag name")] keyword: Option<String>,
-        #[graphql(desc = "Album global ID to exclude tags already on this album")] album_id: Option<ID>,
+        #[graphql(desc = "Album global ID to exclude tags already on this album")] album_id: Option<
+            ID,
+        >,
         #[graphql(desc = "Maximum number of tags to return (default: 5)")] first: Option<i32>,
     ) -> async_graphql::Result<Vec<Tag>> {
         let pool = ctx.data::<ArcPgPool>()?;
-        let limit = first.unwrap_or(5) as i32;
+        let limit = first.unwrap_or(5);
 
         match (keyword, album_id) {
             (Some(kw), Some(album_id)) => {
@@ -283,10 +285,16 @@ impl TagQuery {
         &self,
         ctx: &Context<'_>,
         #[graphql(desc = "Global ID of the tag")] id: ID,
-        #[graphql(desc = "Cursor to fetch items after (forward pagination)")] _after: Option<String>,
-        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] _before: Option<String>,
-        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")] _first: Option<i32>,
-        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")] _last: Option<i32>,
+        #[graphql(desc = "Cursor to fetch items after (forward pagination)")] _after: Option<
+            String,
+        >,
+        #[graphql(desc = "Cursor to fetch items before (backward pagination)")] _before: Option<
+            String,
+        >,
+        #[graphql(desc = "Number of items to fetch from the start (forward pagination)")]
+        _first: Option<i32>,
+        #[graphql(desc = "Number of items to fetch from the end (backward pagination)")]
+        _last: Option<i32>,
     ) -> async_graphql::Result<
         Connection<
             String,
@@ -338,8 +346,7 @@ impl TagQuery {
         let album_tags = service::tag::get_tags_for_album(pool, album_id as i32)
             .await
             .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
-        let linked_names: HashSet<&str> =
-            album_tags.iter().map(|t| t.name.as_str()).collect();
+        let linked_names: HashSet<&str> = album_tags.iter().map(|t| t.name.as_str()).collect();
 
         let mut result = Vec::new();
         for sug in suggestions {
