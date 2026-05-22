@@ -3,7 +3,7 @@ use crate::schema::tag_query::{AlbumsForTagLoader, Tag};
 use crate::schema::{ArcPgPool, from_global_id};
 use crate::service;
 use async_graphql::dataloader::{DataLoader, LruCache};
-use async_graphql::{Context, InputObject, Object, SimpleObject};
+use async_graphql::{Context, InputObject, Object, SimpleObject, ID};
 
 /// Input for creating a new tag
 #[derive(InputObject, Debug, Clone)]
@@ -265,4 +265,94 @@ impl TagMutation {
             client_mutation_id,
         })
     }
+
+    /// Batch associate tags with an album.
+    /// Creates any new tags (by name), then links all tags to the album.
+    async fn batch_add_tags_to_album(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(desc = "Global ID of the album")] album_id: ID,
+        #[graphql(desc = "Global IDs of existing tags to add")] tag_ids: Vec<ID>,
+        #[graphql(desc = "Names of new tags to create and add")] new_tag_names: Vec<String>,
+        #[graphql(desc = "Client mutation ID for Relay support")] client_mutation_id: Option<String>,
+    ) -> async_graphql::Result<BatchAddTagsPayload> {
+        let pool = ctx.data::<ArcPgPool>()?;
+        let (_, album_id) = from_global_id(album_id.as_str())?;
+        let album_id = album_id as i32;
+
+        let mut added_tags: Vec<Tag> = Vec::new();
+
+        // 1. Add existing tags
+        for tag_id_str in &tag_ids {
+            let (_, tag_id) = from_global_id(tag_id_str.as_str())?;
+            let tag_id = tag_id as i32;
+
+            let exists = service::tag::album_tag_exists(pool, album_id, tag_id)
+                .await
+                .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+
+            if !exists {
+                service::tag::add_tag_to_album(pool, album_id, tag_id)
+                    .await
+                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+            }
+
+            let tag = service::tag::get_tag_by_id(pool, tag_id)
+                .await
+                .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+            added_tags.push(tag.into());
+        }
+
+        // 2. Create and add new tags
+        for name in &new_tag_names {
+            if name.trim().is_empty() {
+                continue;
+            }
+
+            let tag = match service::tag::get_tag_by_name(pool, name).await
+                .map_err(|e| async_graphql::Error::new(format!("{}", e)))?
+            {
+                Some(existing) => existing,
+                None => service::tag::create_tag(pool, name, None)
+                    .await
+                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))?,
+            };
+
+            let already_linked = service::tag::album_tag_exists(pool, album_id, tag.id)
+                .await
+                .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+
+            if !already_linked {
+                service::tag::add_tag_to_album(pool, album_id, tag.id)
+                    .await
+                    .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+            }
+
+            added_tags.push(tag.into());
+        }
+
+        // Invalidate caches
+        let tags_for_album_loader = ctx.data::<DataLoader<TagsForAlbumLoader, LruCache>>()?;
+        tags_for_album_loader.clear_one(&album_id);
+        for tag in &added_tags {
+            let albums_for_tag_loader = ctx.data::<DataLoader<AlbumsForTagLoader, LruCache>>()?;
+            albums_for_tag_loader.clear_one(&tag.tag_id);
+        }
+
+        Ok(BatchAddTagsPayload {
+            added_tags,
+            client_mutation_id,
+        })
+    }
+}
+
+/// Input for batch adding tags to an album — flattened into mutation args.
+
+/// Payload for batch tag addition
+#[derive(SimpleObject, Debug, Clone)]
+pub struct BatchAddTagsPayload {
+    /// All tags now associated with the album (existing + newly created)
+    pub added_tags: Vec<Tag>,
+    /// Client mutation ID echoed back for Relay support
+    pub client_mutation_id: Option<String>,
 }

@@ -1,5 +1,5 @@
 use crate::model::entity::pic::Pic;
-use sqlx::{query, query_as, query_scalar};
+use sqlx::{query, query_as, query_scalar, AssertSqlSafe};
 use sqlx_postgres::PgPool;
 
 pub async fn create(pool: &PgPool, url: String, doc_id: i32, seq: i32) -> Result<Pic, sqlx::Error> {
@@ -33,16 +33,16 @@ pub async fn find_page(
     sort_clause: &str,
     pagination_clause: &str,
 ) -> Result<Vec<Pic>, sqlx::Error> {
-    let sql = format!(
+    let sql = AssertSqlSafe(format!(
         "SELECT * FROM pic{}{}{}",
         filter_clause, sort_clause, pagination_clause
-    );
-    query_as(&sql).fetch_all(pool).await
+    ));
+    query_as(sql).fetch_all(pool).await
 }
 
 pub async fn count(pool: &PgPool, filter_clause: &str) -> Result<i64, sqlx::Error> {
-    let sql = format!("SELECT COUNT(*) FROM pic{}", filter_clause);
-    query_scalar(&sql).fetch_one(pool).await
+    let sql = AssertSqlSafe(format!("SELECT COUNT(*) FROM pic{}", filter_clause));
+    query_scalar(sql).fetch_one(pool).await
 }
 
 pub async fn update_by_id(
@@ -96,8 +96,8 @@ pub async fn find_cursor_with_cursor(
 ) -> Result<Vec<Pic>, sqlx::Error> {
     let main_sql = "SELECT * FROM pic WHERE doc_id = $1";
     let where_clause = format!("AND id {} $2", where_op);
-    let sql = format!("{} {} {} LIMIT $3", main_sql, where_clause, order_by);
-    query_as(&sql)
+    let sql = AssertSqlSafe(format!("{} {} {} LIMIT $3", main_sql, where_clause, order_by));
+    query_as(sql)
         .bind(doc_id)
         .bind(cursor)
         .bind(limit)
@@ -112,8 +112,8 @@ pub async fn find_cursor_no_cursor(
     order_by: &str,
 ) -> Result<Vec<Pic>, sqlx::Error> {
     let main_sql = "SELECT * FROM pic WHERE doc_id = $1";
-    let sql = format!("{} {} LIMIT $2", main_sql, order_by);
-    query_as(&sql)
+    let sql = AssertSqlSafe(format!("{} {} LIMIT $2", main_sql, order_by));
+    query_as(sql)
         .bind(doc_id)
         .bind(limit)
         .fetch_all(pool)

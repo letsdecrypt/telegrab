@@ -8,7 +8,7 @@ use crate::service;
 use async_graphql::connection::{Connection, Edge, EmptyFields};
 use async_graphql::dataloader::{DataLoader, Loader, LruCache};
 use async_graphql::{ComplexObject, Context, Object, SimpleObject, ID};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// DataLoader for batch loading tags by their IDs
@@ -130,6 +130,49 @@ impl Tag {
 
         Ok(connection)
     }
+}
+
+// ════════════════════════════════════════════════════════════
+// Tag Suggestion 类型
+// ════════════════════════════════════════════════════════════
+
+/// Category of a tag suggestion
+#[derive(Debug, Clone, Copy, PartialEq, Eq, async_graphql::Enum)]
+pub enum TagCategory {
+    Author,
+    Circle,
+    Source,
+    Magazine,
+    Event,
+    Language,
+    Edition,
+}
+
+impl From<service::tag_suggestion::TagCategory> for TagCategory {
+    fn from(cat: service::tag_suggestion::TagCategory) -> Self {
+        match cat {
+            service::tag_suggestion::TagCategory::Author => TagCategory::Author,
+            service::tag_suggestion::TagCategory::Circle => TagCategory::Circle,
+            service::tag_suggestion::TagCategory::Source => TagCategory::Source,
+            service::tag_suggestion::TagCategory::Magazine => TagCategory::Magazine,
+            service::tag_suggestion::TagCategory::Event => TagCategory::Event,
+            service::tag_suggestion::TagCategory::Language => TagCategory::Language,
+            service::tag_suggestion::TagCategory::Edition => TagCategory::Edition,
+        }
+    }
+}
+
+/// A tag candidate extracted from an album's page_title
+#[derive(Debug, Clone, SimpleObject)]
+pub struct TagSuggestion {
+    /// Suggested tag name
+    pub name: String,
+    /// Category of the suggestion
+    pub category: TagCategory,
+    /// The existing tag if one with this name already exists
+    pub existing_tag: Option<Tag>,
+    /// Whether this tag is already linked to the album
+    pub already_linked: bool,
 }
 
 /// Root query for tag-related operations
@@ -273,5 +316,45 @@ impl TagQuery {
         }));
 
         Ok(connection)
+    }
+
+    /// Analyze an album's page_title and suggest candidate tags.
+    /// Returns suggestions with categories and existing-tag lookup.
+    async fn suggest_tags(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(desc = "Album global ID to analyze")] album_id: ID,
+    ) -> async_graphql::Result<Vec<TagSuggestion>> {
+        let pool = ctx.data::<ArcPgPool>()?;
+        let (_, album_id) = from_global_id(album_id.as_str())?;
+
+        let doc = service::doc::get_doc_by_id(pool, album_id as i32)
+            .await
+            .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+
+        let page_title = doc.page_title.as_deref().unwrap_or("");
+        let suggestions = service::tag_suggestion::extract(page_title);
+
+        let album_tags = service::tag::get_tags_for_album(pool, album_id as i32)
+            .await
+            .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+        let linked_names: HashSet<&str> =
+            album_tags.iter().map(|t| t.name.as_str()).collect();
+
+        let mut result = Vec::new();
+        for sug in suggestions {
+            let existing = service::tag::get_tag_by_name(pool, &sug.name)
+                .await
+                .map_err(|e| async_graphql::Error::new(format!("{}", e)))?;
+            let already_linked = linked_names.contains(sug.name.as_str());
+            result.push(TagSuggestion {
+                name: sug.name,
+                category: sug.category.into(),
+                existing_tag: existing.map(|t| t.into()),
+                already_linked,
+            });
+        }
+
+        Ok(result)
     }
 }

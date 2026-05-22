@@ -1,6 +1,6 @@
 use crate::model::dto::doc::UpdateDocReq;
 use crate::model::entity::doc::{Doc, ShimDoc};
-use sqlx::{query, query_as, query_scalar};
+use sqlx::{query, query_as, query_scalar, AssertSqlSafe};
 use sqlx_postgres::PgPool;
 use time::OffsetDateTime;
 
@@ -29,11 +29,11 @@ pub async fn find_page(
     sort_clause: &str,
     pagination_clause: &str,
 ) -> Result<Vec<Doc>, sqlx::Error> {
-    let sql = format!(
+    let sql = AssertSqlSafe(format!(
         "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id{}{}",
         sort_clause, pagination_clause
-    );
-    query_as(&sql).fetch_all(pool).await
+    ));
+    query_as(sql).fetch_all(pool).await
 }
 
 pub async fn count(pool: &PgPool) -> Result<i64, sqlx::Error> {
@@ -202,8 +202,8 @@ pub async fn find_cursor_with_cursor(
 ) -> Result<Vec<Doc>, sqlx::Error> {
     let main_sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id";
     let where_clause = format!("WHERE doc.id {} $1", where_op);
-    let sql = format!("{} {} {} LIMIT $2", main_sql, where_clause, order_by);
-    query_as(&sql)
+    let sql = AssertSqlSafe(format!("{} {} {} LIMIT $2", main_sql, where_clause, order_by));
+    query_as(sql)
         .bind(cursor)
         .bind(limit)
         .fetch_all(pool)
@@ -216,8 +216,8 @@ pub async fn find_cursor_no_cursor(
     order_by: &str,
 ) -> Result<Vec<Doc>, sqlx::Error> {
     let main_sql = "SELECT doc.*, cbz.id as cbz_id FROM doc left join cbz on doc.id = cbz.doc_id";
-    let sql = format!("{} {} LIMIT $1", main_sql, order_by);
-    query_as(&sql).bind(limit).fetch_all(pool).await
+    let sql = AssertSqlSafe(format!("{} {} LIMIT $1", main_sql, order_by));
+    query_as(sql).bind(limit).fetch_all(pool).await
 }
 
 pub async fn search_by_keyword(

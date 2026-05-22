@@ -1,5 +1,5 @@
 use crate::model::entity::cbz::Cbz;
-use sqlx::{query, query_as, query_scalar};
+use sqlx::{query, query_as, query_scalar, AssertSqlSafe};
 use sqlx_postgres::PgPool;
 
 pub async fn create(pool: &PgPool, path: String) -> Result<Cbz, sqlx::Error> {
@@ -40,8 +40,8 @@ pub async fn find_page(
     sort_clause: &str,
     pagination_clause: &str,
 ) -> Result<Vec<Cbz>, sqlx::Error> {
-    let sql = format!("SELECT * FROM cbz{}{}", sort_clause, pagination_clause);
-    query_as(&sql).fetch_all(pool).await
+    let sql = AssertSqlSafe(format!("SELECT * FROM cbz{}{}", sort_clause, pagination_clause));
+    query_as(sql).fetch_all(pool).await
 }
 
 pub async fn count(pool: &PgPool) -> Result<i64, sqlx::Error> {
