@@ -19,6 +19,20 @@ use telegrab_core::util;
 use tokio::sync::mpsc;
 use zip::write::SimpleFileOptions;
 
+/// RAII guard that removes the active-task entry on drop,
+/// ensuring cleanup even if the worker panics mid-task.
+struct ActiveTaskGuard {
+    queue_state: Arc<QueueState>,
+    task_id: String,
+}
+
+impl Drop for ActiveTaskGuard {
+    fn drop(&mut self) {
+        self.queue_state.active_tasks.remove(&self.task_id);
+        tracing::debug!("active task {} cleaned up by guard", self.task_id);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskWorker {
     queue_state: Arc<QueueState>,
@@ -113,6 +127,11 @@ impl TaskWorker {
                 self.queue_state
                     .register_active_task(&task, self.worker_id)
                     .await;
+                // Cleanup active_tasks on panic; no-op double-remove if we unregister normally.
+                let _active_guard = ActiveTaskGuard {
+                    queue_state: self.queue_state.clone(),
+                    task_id: task.id.clone(),
+                };
                 let result = match &task.task_type {
                     TaskType::HtmlParse { id: doc_id } => {
                         self.process_html_parse_task(doc_id).await
@@ -517,7 +536,7 @@ pub async fn setup_fs_monitor(state: AppState, configuration: Arc<Settings>) {
     }
     state.queue_state.enqueue(Task::new_scan_dir_task()).await;
 
-    let (fs_tx, mut fs_rx) = mpsc::unbounded_channel::<FsEvent>();
+    let (fs_tx, mut fs_rx) = mpsc::channel::<FsEvent>(256);
 
     {
         let queue_state = state.queue_state.clone();
@@ -545,7 +564,9 @@ pub async fn setup_fs_monitor(state: AppState, configuration: Arc<Settings>) {
                     for path in event.paths {
                         if path.extension() == Some("cbz".as_ref()) {
                             let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                            let _ = fs_tx.send(FsEvent::CbzAdded(filename));
+                            if let Err(e) = fs_tx.try_send(FsEvent::CbzAdded(filename)) {
+                                tracing::warn!("FS event channel full, dropping cbz added event: {:?}", e);
+                            }
                         }
                     }
                 }
@@ -553,7 +574,9 @@ pub async fn setup_fs_monitor(state: AppState, configuration: Arc<Settings>) {
                     for path in event.paths {
                         if path.extension() == Some("cbz".as_ref()) {
                             let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                            let _ = fs_tx.send(FsEvent::CbzRemoved(filename));
+                            if let Err(e) = fs_tx.try_send(FsEvent::CbzRemoved(filename)) {
+                                tracing::warn!("FS event channel full, dropping cbz removed event: {:?}", e);
+                            }
                         }
                     }
                 }

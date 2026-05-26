@@ -55,3 +55,5 @@ report.*.json
 !.env.example
 
 /data
+
+resume.sh
