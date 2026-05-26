@@ -12,7 +12,6 @@ use crate::schema::task_subscription::TaskSubscription;
 use async_graphql::dataloader::{DataLoader, LruCache};
 use async_graphql::runtime::{TokioSpawner, TokioTimer};
 use async_graphql::{MergedObject, MergedSubscription, Schema};
-use std::sync::Arc;
 
 pub type GallerySchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
 #[derive(MergedObject, Default)]
@@ -27,7 +26,7 @@ pub fn create_schema(pool: ArcPgPool, states: ArcStates) -> GallerySchema {
     // This provides cross-request caching with automatic eviction
     let album_loader = DataLoader::with_cache(
         AlbumLoader {
-            pool: Arc::clone(&pool),
+            pool: pool.clone(),
         },
         TokioSpawner::current(),
         TokioTimer::default(),
@@ -36,7 +35,7 @@ pub fn create_schema(pool: ArcPgPool, states: ArcStates) -> GallerySchema {
 
     let image_loader = DataLoader::with_cache(
         ImageLoader {
-            pool: Arc::clone(&pool),
+            pool: pool.clone(),
         },
         TokioSpawner::current(),
         TokioTimer::default(),
@@ -45,7 +44,7 @@ pub fn create_schema(pool: ArcPgPool, states: ArcStates) -> GallerySchema {
 
     let tag_for_album_loader = DataLoader::with_cache(
         TagsForAlbumLoader {
-            pool: Arc::clone(&pool),
+            pool: pool.clone(),
         },
         TokioSpawner::current(),
         TokioTimer::default(),
@@ -54,7 +53,7 @@ pub fn create_schema(pool: ArcPgPool, states: ArcStates) -> GallerySchema {
 
     let tag_loader = DataLoader::with_cache(
         TagLoader {
-            pool: Arc::clone(&pool),
+            pool: pool.clone(),
         },
         TokioSpawner::current(),
         TokioTimer::default(),
@@ -63,7 +62,7 @@ pub fn create_schema(pool: ArcPgPool, states: ArcStates) -> GallerySchema {
 
     let albums_for_tag_loader = DataLoader::with_cache(
         AlbumsForTagLoader {
-            pool: Arc::clone(&pool),
+            pool: pool.clone(),
         },
         TokioSpawner::current(),
         TokioTimer::default(),

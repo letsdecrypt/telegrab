@@ -31,11 +31,11 @@ impl HttpClientManager {
             client_builder
                 .pool_max_idle_per_host(config.max_connections)
                 .build()
-                .unwrap_or_else(|_| reqwest::Client::new())
+                .unwrap_or_else(|_| Client::new())
         } else {
             client_builder
                 .build()
-                .unwrap_or_else(|_| reqwest::Client::new())
+                .unwrap_or_else(|_| Client::new())
         };
         Self {
             client: Arc::new(client),

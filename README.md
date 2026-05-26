@@ -22,6 +22,7 @@ crates/
   telegrab-db/        数据库访问层（repository + migrations）
   telegrab-core/      核心业务逻辑（service + graceful shutdown）
   telegrab/           入口 + HTTP/GraphQL 层
+  telegrabber/        独立 CLI 工具，抓取单页面（无需数据库）
 ```
 
 ## API 端点
@@ -60,6 +61,20 @@ systemfd --no-pid -s http::9000 -- cargo watch -x "run --bin telegrab"
 # 生产构建
 cargo build --release
 ```
+
+## telegrabber — 独立命令行工具
+
+不需要数据库，一键抓取单个 telegra.ph 页面，下载图片并打包为 CBZ。
+
+```bash
+# 基本用法
+telegrabber <url>
+
+# 指定目录
+telegrabber https://telegra.ph/some-page-01-01 --pic-dir ./pics --cbz-dir ./cbz
+```
+
+**与 telegrab 的区别：** telegrab 是带数据库、GraphQL API、任务队列的后台服务；telegrabber 是一次性命令行工具，适合快速抓取单个页面。
 
 ## 前置依赖
 

@@ -10,6 +10,6 @@ path = "src/lib.rs"
 
 [dependencies]
 telegrab-model = { path = "../telegrab-model" }
-sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "macros"] }
-sqlx-postgres = { version = "0.9", features = ["uuid", "time"] }
-time = { version = "0.3" }
+sqlx = { workspace = true, features = ["postgres", "runtime-tokio", "macros"] }
+sqlx-postgres = { workspace = true, features = ["uuid", "time"] }
+time = { workspace = true }

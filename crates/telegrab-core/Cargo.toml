@@ -10,18 +10,18 @@ path = "src/lib.rs"
 
 [dependencies]
 telegrab-model = { path = "../telegrab-model" }
-serde = { version = "1", features = ["derive"] }
 telegrab-db = { path = "../telegrab-db" }
-sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio"] }
-sqlx-postgres = { version = "0.9", features = ["uuid", "time"] }
-tokio = { version = "1", features = ["sync", "rt"] }
-time = { version = "0.3" }
-convert_case = "0.11"
-regex = "1"
-reqwest = { version = "0.13" }
-scraper = "0"
-thiserror = "2"
-quick-xml = { version = "0", features = ["serialize"] }
-zip = { version = "8", default-features = false, features = ["time"] }
-url = "2"
-tracing = "0.1"
+serde = { workspace = true }
+sqlx = { workspace = true, features = ["postgres", "runtime-tokio"] }
+sqlx-postgres = { workspace = true, features = ["uuid", "time"] }
+tokio = { workspace = true, features = ["sync", "rt"] }
+time = { workspace = true }
+convert_case = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+scraper = { workspace = true }
+thiserror = { workspace = true }
+quick-xml = { workspace = true }
+zip = { workspace = true }
+url = { workspace = true }
+tracing = { workspace = true }

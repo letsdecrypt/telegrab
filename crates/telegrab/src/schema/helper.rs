@@ -11,7 +11,7 @@ use sqlx_postgres::PgPool;
 use std::sync::Arc;
 
 /// Shared PostgreSQL connection pool type
-pub type ArcPgPool = Arc<PgPool>;
+pub type ArcPgPool = PgPool;
 
 /// Shared task queue state type
 pub type ArcStates = Arc<QueueState>;

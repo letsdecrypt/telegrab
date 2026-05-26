@@ -1,5 +1,9 @@
+use mimalloc::MiMalloc;
 use std::fmt::{self, Display};
 use std::sync::Arc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 use telegrab::state::AppState;
 use telegrab::{

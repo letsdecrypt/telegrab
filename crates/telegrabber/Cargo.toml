@@ -12,8 +12,8 @@ path = "src/main.rs"
 [dependencies]
 telegrab-core = { path = "../telegrab-core" }
 telegrab-model = { path = "../telegrab-model" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-anyhow = "1"
-time = "0.3"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+anyhow = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

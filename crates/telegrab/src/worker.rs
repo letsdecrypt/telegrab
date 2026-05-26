@@ -23,8 +23,8 @@ use zip::write::SimpleFileOptions;
 pub struct TaskWorker {
     queue_state: Arc<QueueState>,
     shutdown: Arc<GracefulShutdown>,
-    http_client: Arc<HttpClientManager>,
-    db_pool: Arc<PgPool>,
+    http_client: HttpClientManager,
+    db_pool: PgPool,
     worker_id: usize,
     pic_dir: Arc<String>,
     cbz_dir: Arc<String>,

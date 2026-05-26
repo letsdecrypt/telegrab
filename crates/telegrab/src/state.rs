@@ -245,8 +245,8 @@ pub struct AppState {
     pub queue_state: Arc<QueueState>,
     pub fs_watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
     pub shutdown: Arc<GracefulShutdown>,
-    pub db_pool: Arc<PgPool>,
-    pub http_client: Arc<HttpClientManager>,
+    pub db_pool: PgPool,
+    pub http_client: HttpClientManager,
     pub base_url: String,
     pub worker_count: usize,
     pub pic_dir: Arc<String>,
@@ -256,23 +256,19 @@ pub struct AppState {
 impl AppState {
     pub async fn build(configuration: &Settings) -> crate::Result<Self> {
         let queue_state = Arc::new(QueueState::new(configuration.worker.max_total_tasks));
-        let db_pool = Arc::new(
-            PgPoolOptions::new()
-                .acquire_timeout(Duration::from_secs(5))
-                .max_connections(configuration.database.max_connections)
-                .min_connections(configuration.database.min_connections)
-                .connect_with(configuration.database.with_db())
-                .await?,
-        );
+        let db_pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_secs(5))
+            .max_connections(configuration.database.max_connections)
+            .min_connections(configuration.database.min_connections)
+            .connect_with(configuration.database.with_db())
+            .await?;
         let shutdown = Arc::new(GracefulShutdown::new());
 
-        let http_client = Arc::new(HttpClientManager::new(Some(
-            configuration.http_client.clone(),
-        )));
+        let http_client = HttpClientManager::new(Some(configuration.http_client.clone()));
 
         if configuration.database.auto_migrate {
             sqlx::migrate!("../telegrab-db/migrations")
-                .run(&*db_pool)
+                .run(&db_pool)
                 .await
                 .map_err(crate::Error::msg)?;
         }
